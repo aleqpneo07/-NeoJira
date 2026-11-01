@@ -1,5 +1,6 @@
 import {
   NavigationFilter,
+  SortOption,
   SUBTASK_CONSTRAINTS,
   SubtaskItem,
   TASK_CONSTRAINTS,
@@ -9,7 +10,7 @@ import {
   TaskStatus,
 } from '../types/tasks';
 
-const SPANISH_MONTHS = [
+export const SPANISH_MONTHS = [
   'enero',
   'febrero',
   'marzo',
@@ -54,6 +55,45 @@ export function addDaysIso(baseIso: string, days: number): string {
   const month = String(dt.getUTCMonth() + 1).padStart(2, '0');
   const day = String(dt.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+export interface CalendarDayCell {
+  isoDate: string;
+  dayNumber: number;
+  isCurrentMonth: boolean;
+  isToday: boolean;
+}
+
+export function getCalendarMonthDays(
+  year: number,
+  monthIndex: number,
+  todayIso: string
+): CalendarDayCell[] {
+  const firstOfMonth = new Date(Date.UTC(year, monthIndex, 1));
+  // Convert Sunday=0..Saturday=6 into Monday=0..Sunday=6
+  const startDayOfWeek = (firstOfMonth.getUTCDay() + 6) % 7;
+  const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+
+  const totalCells = Math.ceil((startDayOfWeek + daysInMonth) / 7) * 7;
+  const cells: CalendarDayCell[] = [];
+
+  for (let i = 0; i < totalCells; i++) {
+    const dayOffset = i - startDayOfWeek + 1;
+    const dt = new Date(Date.UTC(year, monthIndex, dayOffset));
+    const y = dt.getUTCFullYear();
+    const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(dt.getUTCDate()).padStart(2, '0');
+    const isoDate = `${y}-${m}-${d}`;
+
+    cells.push({
+      isoDate,
+      dayNumber: dt.getUTCDate(),
+      isCurrentMonth: dt.getUTCMonth() === monthIndex,
+      isToday: isoDate === todayIso,
+    });
+  }
+
+  return cells;
 }
 
 export function calculateTaskProgress(
@@ -196,7 +236,8 @@ export function validateTaskDraft(draft: Partial<TaskDraftInput>): {
 export function filterAndSortTasks(
   tasks: TaskItem[],
   filter: NavigationFilter,
-  searchQuery: string
+  searchQuery: string,
+  sortBy: SortOption = 'fecha'
 ): TaskItem[] {
   const q = searchQuery.trim().toLowerCase();
 
@@ -214,10 +255,16 @@ export function filterAndSortTasks(
   });
 
   return [...filtered].sort((a, b) => {
+    if (sortBy === 'progreso') {
+      if (b.progress !== a.progress) return b.progress - a.progress;
+    } else if (sortBy === 'titulo') {
+      const cmp = a.title.localeCompare(b.title, 'es');
+      if (cmp !== 0) return cmp;
+    }
     if (a.dueDate !== b.dueDate) {
       return a.dueDate.localeCompare(b.dueDate);
     }
-    return a.title.localeCompare(b.title);
+    return a.title.localeCompare(b.title, 'es');
   });
 }
 
@@ -384,7 +431,7 @@ export function getInitialSeedData(
   ];
 
   const subtasks: SubtaskItem[] = [
-    // Task 1: Identidad Estudio Lumen (Matches reference image checklist!)
+    // Task 1: Identidad Estudio Lumen
     {
       id: 'sub-lumen-1',
       ownerId,

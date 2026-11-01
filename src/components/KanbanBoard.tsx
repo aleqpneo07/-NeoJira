@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ArrowRight,
+  Calendar as CalendarIcon,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Cloud,
   LayoutGrid,
   List,
@@ -12,28 +15,36 @@ import {
 import {
   CATEGORY_LABELS,
   NavigationFilter,
+  SortOption,
   STATUS_LABELS,
   TaskItem,
   TaskStatus,
   ViewMode,
 } from '../types/tasks';
-import { formatSpanishDate } from '../utils/taskLogic';
+import {
+  formatSpanishDate,
+  getCalendarMonthDays,
+  SPANISH_MONTHS,
+} from '../utils/taskLogic';
 
 interface KanbanBoardProps {
   tasks: TaskItem[];
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
   onStatusChange: (taskId: string, newStatus: TaskStatus) => void;
-  onOpenNewTaskModal: (defaultStatus?: TaskStatus) => void;
+  onOpenNewTaskModal: (defaultStatus?: TaskStatus, defaultDueDate?: string) => void;
   onOpenConnectModal: () => void;
   activeFilter: NavigationFilter;
   searchQuery: string;
   onSearchChange: (q: string) => void;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
+  sortBy: SortOption;
+  onSortByChange: (sort: SortOption) => void;
   weeklyDeliveriesCount: number;
   todayIso: string;
   userEmail: string | null;
+  searchInputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
 const COLUMNS: { status: TaskStatus; title: string }[] = [
@@ -41,6 +52,8 @@ const COLUMNS: { status: TaskStatus; title: string }[] = [
   { status: 'en_marcha', title: 'En marcha' },
   { status: 'terminado', title: 'Terminado' },
 ];
+
+const WEEKDAYS_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   tasks,
@@ -54,11 +67,67 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   onSearchChange,
   viewMode,
   onViewModeChange,
+  sortBy,
+  onSortByChange,
   weeklyDeliveriesCount,
   todayIso,
   userEmail,
+  searchInputRef,
 }) => {
   const [mobileStatusTab, setMobileStatusTab] = useState<TaskStatus | 'todos'>('todos');
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
+
+  // Calendar month state initialized from todayIso
+  const initialYearMonth = useMemo(() => {
+    const [y, m] = todayIso.split('-').map(Number);
+    return {
+      year: y || new Date().getFullYear(),
+      monthIndex: (m || new Date().getMonth() + 1) - 1,
+    };
+  }, [todayIso]);
+
+  const [calYear, setCalYear] = useState(initialYearMonth.year);
+  const [calMonth, setCalMonth] = useState(initialYearMonth.monthIndex);
+  const [selectedCalDate, setSelectedCalDate] = useState<string>(todayIso);
+
+  const calendarCells = useMemo(
+    () => getCalendarMonthDays(calYear, calMonth, todayIso),
+    [calYear, calMonth, todayIso]
+  );
+
+  const tasksByDate = useMemo(() => {
+    const map: Record<string, TaskItem[]> = {};
+    for (const t of tasks) {
+      if (!map[t.dueDate]) map[t.dueDate] = [];
+      map[t.dueDate].push(t);
+    }
+    return map;
+  }, [tasks]);
+
+  const handlePrevMonth = () => {
+    if (calMonth === 0) {
+      setCalMonth(11);
+      setCalYear((y) => y - 1);
+    } else {
+      setCalMonth((m) => m - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (calMonth === 11) {
+      setCalMonth(0);
+      setCalYear((y) => y + 1);
+    } else {
+      setCalMonth((m) => m + 1);
+    }
+  };
+
+  const handleGoToday = () => {
+    setCalYear(initialYearMonth.year);
+    setCalMonth(initialYearMonth.monthIndex);
+    setSelectedCalDate(todayIso);
+  };
 
   const sectionHeading =
     activeFilter === 'todo'
@@ -82,9 +151,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       aria-label="Tablero de actividades"
       className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#0B0E14]"
     >
-      {/* Top Header & Controls Bar (Matches reference image single-row top bar) */}
+      {/* Top Header & Controls Bar */}
       <header className="px-4 sm:px-6 pt-5 pb-4 border-b border-[#1E2638] space-y-3 shrink-0">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+        <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-3">
           <div className="shrink-0">
             <p className="text-xs font-medium text-slate-400 font-mono-num">
               {weeklyDeliveriesCount === 1
@@ -96,23 +165,23 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 {sectionHeading}
               </h1>
 
-              {/* Mobile quick sync + install + new button */}
+              {/* Mobile & Tablet quick sync + new button */}
               <div className="flex lg:hidden items-center gap-2">
                 <button
                   type="button"
                   onClick={onOpenConnectModal}
-                  aria-label="Instalar aplicación en móvil y sincronizar"
-                  className="min-h-[44px] px-3 rounded-xl bg-[#151B28] border border-[#FF6B4A]/40 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  aria-label="Instalar aplicación y sincronizar"
+                  className="min-h-[42px] px-3 rounded-xl bg-[#151B28] border border-[#FF6B4A]/40 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                 >
                   <Cloud
                     className={`w-4 h-4 ${userEmail ? 'text-emerald-400' : 'text-[#FF6B4A]'}`}
                   />
-                  <span>{userEmail ? 'Instalar / Sync' : 'Instalar App'}</span>
+                  <span>{userEmail ? 'Sync / Backup' : 'Conectar'}</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => onOpenNewTaskModal()}
-                  className="min-h-[44px] px-3.5 rounded-xl bg-[#FF6B4A] text-[#0B0E14] font-semibold text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  className="min-h-[42px] px-3.5 rounded-xl bg-[#FF6B4A] text-[#0B0E14] font-semibold text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                 >
                   <Plus className="w-4 h-4 stroke-[2.5]" />
                   <span>Nueva</span>
@@ -121,22 +190,35 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             </div>
           </div>
 
-          {/* Search, View Switcher (Tablero | Lista), and + Nueva tarea CTA on one line */}
-          <div className="flex items-center gap-2 flex-nowrap">
+          {/* Search, Sort, View Switcher (Tablero | Lista | Calendario), and + Nueva tarea CTA */}
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
             {/* Search Input */}
-            <div className="relative flex-1 sm:flex-initial sm:w-40 xl:w-52 min-w-0">
+            <div className="relative flex-1 sm:w-44 xl:w-52 min-w-[140px]">
               <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
+                ref={searchInputRef}
                 type="search"
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
-                placeholder="Buscar..."
+                placeholder="Buscar... (/)"
                 aria-label="Buscar trabajos, exámenes o tareas"
                 className="w-full pl-8 pr-2.5 py-2 rounded-xl bg-[#131822] border border-[#222B3D] text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#FF6B4A] transition-colors min-h-[40px]"
               />
             </div>
 
-            {/* Segmented Control: Tablero | Lista */}
+            {/* Sort Selector */}
+            <select
+              value={sortBy}
+              onChange={(e) => onSortByChange(e.target.value as SortOption)}
+              aria-label="Ordenar tareas por"
+              className="px-2.5 py-2 rounded-xl bg-[#131822] border border-[#222B3D] text-xs text-slate-300 focus:outline-none focus:border-[#FF6B4A] min-h-[40px] cursor-pointer shrink-0"
+            >
+              <option value="fecha">Orden: Fecha</option>
+              <option value="progreso">Orden: Progreso</option>
+              <option value="titulo">Orden: A-Z</option>
+            </select>
+
+            {/* Segmented Control: Tablero | Lista | Calendario */}
             <div
               role="group"
               aria-label="Modo de visualización"
@@ -166,6 +248,18 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 <List className="w-3.5 h-3.5" />
                 <span>Lista</span>
               </button>
+              <button
+                type="button"
+                onClick={() => onViewModeChange('calendario')}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  viewMode === 'calendario'
+                    ? 'bg-[#222C40] text-white shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <CalendarIcon className="w-3.5 h-3.5" />
+                <span>Calendario</span>
+              </button>
             </div>
 
             {/* Desktop Primary CTA: + Nueva tarea */}
@@ -180,9 +274,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           </div>
         </div>
 
-        {/* Mobile Column Filter Tabs (4-column grid with zero horizontal clipping) */}
+        {/* Mobile / Small-Tablet Column Filter Tabs (Matches md:grid-cols-3 breakpoint) */}
         {viewMode === 'tablero' && (
-          <div className="grid grid-cols-4 sm:hidden gap-1.5 pt-0.5">
+          <div className="grid grid-cols-4 md:hidden gap-1.5 pt-0.5">
             {(
               [
                 { id: 'todos', label: 'Todos', count: tasks.length },
@@ -223,9 +317,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         )}
       </header>
 
-      {/* Main Board or List Content */}
+      {/* Main Board, List, or Calendar Content */}
       <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 pb-24 lg:pb-6">
-        {tasks.length === 0 ? (
+        {tasks.length === 0 && viewMode !== 'calendario' ? (
           <div className="h-64 rounded-2xl border border-dashed border-[#242E42] bg-[#111620]/50 flex flex-col items-center justify-center text-center p-6">
             <SlidersHorizontal className="w-8 h-8 text-slate-500 mb-3" />
             <p className="text-sm font-semibold text-white">
@@ -248,9 +342,32 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               (col) => mobileStatusTab === 'todos' || mobileStatusTab === col.status
             ).map((col) => {
               const colTasks = tasks.filter((t) => t.status === col.status);
+              const isDropTarget = dragOverColumn === col.status;
+
               return (
-                <div key={col.status} className="space-y-3">
-                  {/* Column Header (Matches "Pendiente 2", "En marcha 2", "Terminado 3") */}
+                <div
+                  key={col.status}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (dragOverColumn !== col.status) setDragOverColumn(col.status);
+                  }}
+                  onDragLeave={() => {
+                    if (dragOverColumn === col.status) setDragOverColumn(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOverColumn(null);
+                    const taskId = e.dataTransfer.getData('text/plain') || draggedTaskId;
+                    if (taskId) {
+                      onStatusChange(taskId, col.status);
+                    }
+                    setDraggedTaskId(null);
+                  }}
+                  className={`space-y-3 rounded-2xl p-2 -m-2 transition-colors ${
+                    isDropTarget ? 'bg-[#192234]/70 ring-1 ring-[#FF6B4A]/60' : ''
+                  }`}
+                >
+                  {/* Column Header */}
                   <div className="flex items-center justify-between px-1">
                     <h2 className="text-xs font-semibold text-slate-400 tracking-tight">
                       {col.title}
@@ -277,7 +394,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                       const dateInfo = formatSpanishDate(task.dueDate, todayIso);
                       const nextTransition = getNextStatus(task.status);
 
-                      // Progress bar color matching status & urgency
                       const barColor =
                         task.status === 'terminado'
                           ? 'bg-emerald-400'
@@ -290,11 +406,21 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                       return (
                         <div
                           key={task.id}
+                          draggable
+                          onDragStart={(e) => {
+                            setDraggedTaskId(task.id);
+                            e.dataTransfer.setData('text/plain', task.id);
+                            e.dataTransfer.effectAllowed = 'move';
+                          }}
+                          onDragEnd={() => {
+                            setDraggedTaskId(null);
+                            setDragOverColumn(null);
+                          }}
                           className={`rounded-2xl p-4 transition-all border ${
                             isSelected
                               ? 'bg-[#171E2E] border-[#FF6B4A] shadow-lg shadow-black/40'
                               : 'bg-[#131822] border-[#1F2737] hover:border-[#33415C] hover:bg-[#151B27]'
-                          }`}
+                          } ${draggedTaskId === task.id ? 'opacity-50 scale-[0.98]' : ''}`}
                         >
                           {/* Main Clickable Card Area to Select in Inspector */}
                           <button
@@ -312,7 +438,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                               </span>
                             </div>
 
-                            {/* Primary Title (No Euro prices as requested by user) */}
+                            {/* Primary Title */}
                             <h3 className="text-[15px] font-bold text-white font-display leading-snug">
                               {task.title}
                             </h3>
@@ -339,7 +465,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                               </span>
                             </div>
 
-                            {/* Visual Progress Bar (Matches bottom bar on cards in reference image) */}
+                            {/* Visual Progress Bar */}
                             <div className="w-full h-1.5 rounded-full bg-[#222B3D] overflow-hidden mt-2">
                               <div
                                 className={`h-full rounded-full transition-all duration-200 ${barColor}`}
@@ -377,7 +503,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
                     {colTasks.length === 0 && (
                       <div className="rounded-2xl border border-dashed border-[#1E2638] p-5 text-center">
-                        <p className="text-xs text-slate-500">Sin tareas en {col.title}</p>
+                        <p className="text-xs text-slate-500">
+                          Sin tareas en {col.title} (arrastra aquí o pulsa +)
+                        </p>
                       </div>
                     )}
                   </div>
@@ -385,7 +513,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               );
             })}
           </div>
-        ) : (
+        ) : viewMode === 'lista' ? (
           /* List View Mode */
           <div className="rounded-2xl bg-[#131822] border border-[#1F2737] overflow-hidden">
             <div className="divide-y divide-[#1E2638]">
@@ -412,7 +540,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                         <span>·</span>
                         <span
                           className={
-                            dateInfo.isToday && task.status !== 'terminado'
+                            (dateInfo.isToday || dateInfo.isOverdue) &&
+                            task.status !== 'terminado'
                               ? 'text-[#FF6B4A] font-medium'
                               : 'text-slate-400'
                           }
@@ -433,7 +562,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                         </div>
                         <div className="w-full h-1.5 rounded-full bg-[#222B3D] overflow-hidden">
                           <div
-                            className="h-full rounded-full bg-[#FF6B4A]"
+                            className={`h-full rounded-full ${
+                              task.status === 'terminado' ? 'bg-emerald-400' : 'bg-[#FF6B4A]'
+                            }`}
                             style={{ width: `${Math.max(6, task.progress)}%` }}
                           />
                         </div>
@@ -450,6 +581,199 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                   </div>
                 );
               })}
+            </div>
+          </div>
+        ) : (
+          /* Calendar View Mode (Jira-style interactive task calendar for PC, Tablet & Phone) */
+          <div className="space-y-4">
+            {/* Calendar Month Navigation Bar */}
+            <div className="flex items-center justify-between gap-2 bg-[#131822] border border-[#1F2737] rounded-2xl px-4 py-3">
+              <div className="flex items-center gap-2">
+                <h2 className="text-base sm:text-lg font-extrabold text-white font-display capitalize">
+                  {SPANISH_MONTHS[calMonth]} {calYear}
+                </h2>
+                <button
+                  type="button"
+                  onClick={handleGoToday}
+                  className="px-2.5 py-1 rounded-lg bg-[#1B2333] hover:bg-[#253047] text-xs font-medium text-[#FF6B4A] transition-colors cursor-pointer"
+                >
+                  Hoy
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handlePrevMonth}
+                  aria-label="Mes anterior"
+                  className="p-2 rounded-xl bg-[#1B2333] hover:bg-[#253047] text-slate-200 cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNextMonth}
+                  aria-label="Mes siguiente"
+                  className="p-2 rounded-xl bg-[#1B2333] hover:bg-[#253047] text-slate-200 cursor-pointer"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* 7-Column Calendar Grid */}
+            <div className="rounded-2xl bg-[#131822] border border-[#1F2737] overflow-hidden">
+              <div className="grid grid-cols-7 border-b border-[#1E2638] bg-[#0F131C]">
+                {WEEKDAYS_SHORT.map((day) => (
+                  <div
+                    key={day}
+                    className="py-2.5 text-center text-[11px] font-semibold text-slate-400 uppercase tracking-wider"
+                  >
+                    {day}
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-7 divide-x divide-y divide-[#1E2638]">
+                {calendarCells.map((cell) => {
+                  const dayTasks = tasksByDate[cell.isoDate] || [];
+                  const isSelectedDay = selectedCalDate === cell.isoDate;
+
+                  return (
+                    <div
+                      key={cell.isoDate}
+                      onClick={() => setSelectedCalDate(cell.isoDate)}
+                      className={`min-h-[76px] sm:min-h-[110px] p-1.5 sm:p-2 transition-colors flex flex-col justify-between cursor-pointer ${
+                        !cell.isCurrentMonth
+                          ? 'bg-[#0B0E14]/60 text-slate-600'
+                          : isSelectedDay
+                          ? 'bg-[#192132]'
+                          : 'hover:bg-[#161D2B]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`w-6 h-6 rounded-full text-xs font-mono-num flex items-center justify-center font-semibold ${
+                            cell.isToday
+                              ? 'bg-[#FF6B4A] text-[#0B0E14]'
+                              : cell.isCurrentMonth
+                              ? 'text-slate-200'
+                              : 'text-slate-600'
+                          }`}
+                        >
+                          {cell.dayNumber}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenNewTaskModal('pendiente', cell.isoDate);
+                          }}
+                          aria-label={`Añadir tarea el ${cell.isoDate}`}
+                          className="opacity-70 hover:opacity-100 p-1 rounded-md text-slate-400 hover:text-white hover:bg-[#242F46] cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+
+                      {/* Desktop / Tablet Task Pills */}
+                      <div className="hidden sm:flex flex-col gap-1 mt-1 overflow-hidden">
+                        {dayTasks.slice(0, 3).map((t) => {
+                          const pillColor =
+                            t.status === 'terminado'
+                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 line-through'
+                              : t.category === 'examen'
+                              ? 'bg-indigo-500/20 border-indigo-400/40 text-indigo-200'
+                              : 'bg-[#FF6B4A]/20 border-[#FF6B4A]/40 text-white';
+
+                          return (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectTask(t.id);
+                              }}
+                              className={`w-full text-left px-1.5 py-0.5 rounded border text-[10px] font-medium truncate transition-transform hover:scale-[1.01] cursor-pointer ${pillColor}`}
+                            >
+                              {t.title}
+                            </button>
+                          );
+                        })}
+                        {dayTasks.length > 3 && (
+                          <span className="text-[10px] text-slate-400 pl-1 font-mono-num">
+                            +{dayTasks.length - 3} más
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Mobile Compact Dots */}
+                      {dayTasks.length > 0 && (
+                        <div className="flex sm:hidden items-center justify-center gap-1 mt-1">
+                          {dayTasks.slice(0, 4).map((t) => (
+                            <span
+                              key={t.id}
+                              className={`w-2 h-2 rounded-full ${
+                                t.status === 'terminado'
+                                  ? 'bg-emerald-400'
+                                  : t.category === 'examen'
+                                  ? 'bg-indigo-400'
+                                  : 'bg-[#FF6B4A]'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Selected Day Agenda Details (ideal for Phone & Tablet touch ergonomics) */}
+            <div className="rounded-2xl bg-[#131822] border border-[#1F2737] p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-slate-400">Entregas del día seleccionado</p>
+                  <h3 className="text-sm font-bold text-white font-display">
+                    {formatSpanishDate(selectedCalDate, todayIso).fullDate}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenNewTaskModal('pendiente', selectedCalDate)}
+                  className="px-3 py-1.5 rounded-xl bg-[#FF6B4A] text-[#0B0E14] text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>Añadir este día</span>
+                </button>
+              </div>
+
+              {(tasksByDate[selectedCalDate] || []).length === 0 ? (
+                <p className="text-xs text-slate-500 py-2">
+                  No hay entregas programadas para esta fecha.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {(tasksByDate[selectedCalDate] || []).map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => onSelectTask(t.id)}
+                      className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-[#0B0E14] border border-[#1E2638] hover:border-[#FF6B4A] text-left transition-colors cursor-pointer"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-[11px] text-slate-400">
+                          {CATEGORY_LABELS[t.category]} · {t.subtitle}
+                        </p>
+                        <p className="text-xs font-bold text-white truncate mt-0.5">{t.title}</p>
+                      </div>
+                      <span className="text-xs font-mono-num font-semibold text-[#FF6B4A] shrink-0">
+                        {t.progress} %
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}

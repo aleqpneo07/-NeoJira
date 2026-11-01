@@ -1,13 +1,14 @@
 {
-  "name": "react-example",
+  "name": "enfoque-neojira",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.1.0",
+  "description": "Enfoque (NeoJira) — Gestor de trabajos, exámenes y tareas con tablero Kanban, vista de lista, calendario interactivo y sincronización en tiempo real para Móvil, Tableta y PC.",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
+    "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -15,7 +16,6 @@
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
     "dotenv": "^17.2.3",
-    "express": "^4.21.2",
     "firebase": "^13.1.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
@@ -26,7 +26,6 @@
   },
   "devDependencies": {
     "@firebase/eslint-plugin-security-rules": "^0.0.2",
-    "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",

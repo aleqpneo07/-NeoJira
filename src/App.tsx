@@ -31,6 +31,7 @@ import {
 } from './lib/firebase';
 import {
   NavigationFilter,
+  SortOption,
   SUBTASK_CONSTRAINTS,
   SubtaskItem,
   TASK_CONSTRAINTS,
@@ -65,7 +66,22 @@ function makeSafeId(prefix: string): string {
 }
 
 export default function App() {
-  const todayIso = useMemo(() => getTodayIsoString(), []);
+  const [todayIso, setTodayIso] = useState(() => getTodayIsoString());
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Refresh todayIso when returning to tab or after midnight
+  useEffect(() => {
+    const refreshToday = () => {
+      const next = getTodayIsoString();
+      setTodayIso((prev) => (prev !== next ? next : prev));
+    };
+    window.addEventListener('focus', refreshToday);
+    document.addEventListener('visibilitychange', refreshToday);
+    return () => {
+      window.removeEventListener('focus', refreshToday);
+      document.removeEventListener('visibilitychange', refreshToday);
+    };
+  }, []);
 
   // Auth & Cloud Sync State
   const [user, setUser] = useState<User | null>(null);
@@ -100,10 +116,18 @@ export default function App() {
     return getInitialSeedData(getTodayIsoString()).subtasks;
   });
 
+  const localTasksRef = useRef(tasks);
+  const localSubtasksRef = useRef(subtasks);
+  useEffect(() => {
+    localTasksRef.current = tasks;
+    localSubtasksRef.current = subtasks;
+  }, [tasks, subtasks]);
+
   // Navigation & UI State
   const [activeFilter, setActiveFilter] = useState<NavigationFilter>('todo');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('tablero');
+  const [sortBy, setSortBy] = useState<SortOption>('fecha');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>('task-estudio-lumen');
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
 
@@ -111,19 +135,51 @@ export default function App() {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<TaskItem | null>(null);
   const [modalDefaultStatus, setModalDefaultStatus] = useState<TaskStatus>('pendiente');
+  const [modalDefaultDueDate, setModalDefaultDueDate] = useState<string | undefined>(undefined);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
 
-  // Persist to localStorage when in local mode
+  // Persist to localStorage (both offline and as a local mirror)
   useEffect(() => {
-    if (!user) {
-      try {
-        localStorage.setItem(LOCAL_STORAGE_TASKS_KEY, JSON.stringify(tasks));
-        localStorage.setItem(LOCAL_STORAGE_SUBTASKS_KEY, JSON.stringify(subtasks));
-      } catch {
-        // Ignore quota errors
-      }
+    try {
+      localStorage.setItem(LOCAL_STORAGE_TASKS_KEY, JSON.stringify(tasks));
+      localStorage.setItem(LOCAL_STORAGE_SUBTASKS_KEY, JSON.stringify(subtasks));
+    } catch {
+      // Ignore quota errors
     }
-  }, [tasks, subtasks, user]);
+  }, [tasks, subtasks]);
+
+  // Global Keyboard Shortcuts (PC & Tablet with Keyboard)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable);
+
+      if (e.key === 'Escape') {
+        if (isTaskModalOpen) setIsTaskModalOpen(false);
+        else if (isConnectModalOpen) setIsConnectModalOpen(false);
+        else if (isMobileDrawerOpen) setIsMobileDrawerOpen(false);
+        return;
+      }
+
+      if (isInput) return;
+
+      if (e.key === '/' || (e.ctrlKey && e.key.toLowerCase() === 'k')) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      } else if (e.key.toLowerCase() === 'n' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        openNewTaskModal();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isTaskModalOpen, isConnectModalOpen, isMobileDrawerOpen]);
 
   // Listen to Firebase Auth state
   useEffect(() => {
@@ -146,11 +202,19 @@ export default function App() {
       async (snapshot) => {
         if (snapshot.empty && !hasSeededCloudRef.current.has(user.uid)) {
           hasSeededCloudRef.current.add(user.uid);
-          // Seed initial tasks into user's cloud account so their existing board carries over seamlessly
+          // Upload user's existing local tasks (or seed data if empty) so custom offline work is preserved!
           try {
-            const seed = getInitialSeedData(todayIso, user.uid);
+            const currentLocalTasks =
+              localTasksRef.current.length > 0
+                ? localTasksRef.current
+                : getInitialSeedData(todayIso, user.uid).tasks;
+            const currentLocalSubtasks =
+              localTasksRef.current.length > 0
+                ? localSubtasksRef.current
+                : getInitialSeedData(todayIso, user.uid).subtasks;
+
             const batch = writeBatch(db);
-            for (const t of seed.tasks) {
+            for (const t of currentLocalTasks) {
               batch.set(doc(db, 'tasks', t.id), {
                 ownerId: user.uid,
                 title: t.title.slice(0, TASK_CONSTRAINTS.TITLE_MAX_LEN),
@@ -166,7 +230,7 @@ export default function App() {
                 updatedAt: serverTimestamp(),
               });
             }
-            for (const s of seed.subtasks) {
+            for (const s of currentLocalSubtasks) {
               batch.set(doc(db, 'subtasks', s.id), {
                 ownerId: user.uid,
                 taskId: s.taskId,
@@ -253,8 +317,8 @@ export default function App() {
 
   // Derived collections & counts
   const filteredTasks = useMemo(
-    () => filterAndSortTasks(tasks, activeFilter, searchQuery),
-    [tasks, activeFilter, searchQuery]
+    () => filterAndSortTasks(tasks, activeFilter, searchQuery, sortBy),
+    [tasks, activeFilter, searchQuery, sortBy]
   );
 
   const selectedTask = useMemo(
@@ -316,7 +380,7 @@ export default function App() {
 
   const handleStatusChange = async (taskId: string, newStatus: TaskStatus) => {
     const target = tasks.find((t) => t.id === taskId);
-    if (!target) return;
+    if (!target || target.status === newStatus) return;
 
     const taskSubs = subtasks.filter((s) => s.taskId === taskId);
     const { progress, totalSubtasks, completedSubtasks } =
@@ -430,7 +494,7 @@ export default function App() {
       return;
     }
 
-    // Creating a new Task + its initial Subtasks
+    // Creating a new Task + its initial Subtasks atomically
     const newTaskId = makeSafeId('task');
     const initialSubs = (draft.initialSubtasks || []).map((s, idx) => ({
       id: makeSafeId(`sub-${idx}`),
@@ -463,7 +527,8 @@ export default function App() {
 
     if (user) {
       try {
-        await setDoc(doc(db, 'tasks', newTaskId), {
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'tasks', newTaskId), {
           ownerId,
           title: newTask.title,
           subtitle: newTask.subtitle,
@@ -479,7 +544,7 @@ export default function App() {
         });
 
         for (const sub of initialSubs) {
-          await setDoc(doc(db, 'subtasks', sub.id), {
+          batch.set(doc(db, 'subtasks', sub.id), {
             ownerId,
             taskId: newTaskId,
             title: sub.title,
@@ -490,6 +555,7 @@ export default function App() {
             updatedAt: serverTimestamp(),
           });
         }
+        await batch.commit();
       } catch (error) {
         handleFirestoreError(error, OperationType.CREATE, `tasks/${newTaskId}`);
       }
@@ -506,6 +572,7 @@ export default function App() {
 
     if (user) {
       try {
+        // Delete subtasks first so isParentTaskOwner security rule still sees the parent task
         for (const s of taskSubtasks) {
           await deleteDoc(doc(db, 'subtasks', s.id));
         }
@@ -608,6 +675,31 @@ export default function App() {
     } else {
       setSubtasks((prev) =>
         prev.map((s) => (s.id === subtaskId ? { ...s, scheduleLabel: nextLabel } : s))
+      );
+    }
+  };
+
+  const handleEditSubtaskTitle = async (subtaskId: string, newTitle: string) => {
+    const targetSub = subtasks.find((s) => s.id === subtaskId);
+    if (!targetSub) return;
+    const sanitizedTitle = newTitle.trim().slice(0, SUBTASK_CONSTRAINTS.TITLE_MAX_LEN);
+    if (sanitizedTitle.length < SUBTASK_CONSTRAINTS.TITLE_MIN_LEN) return;
+
+    if (user) {
+      try {
+        await updateDoc(doc(db, 'subtasks', subtaskId), {
+          title: sanitizedTitle,
+          completed: targetSub.completed,
+          scheduleLabel: targetSub.scheduleLabel,
+          sortOrder: targetSub.sortOrder,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `subtasks/${subtaskId}`);
+      }
+    } else {
+      setSubtasks((prev) =>
+        prev.map((s) => (s.id === subtaskId ? { ...s, title: sanitizedTitle } : s))
       );
     }
   };
@@ -716,9 +808,53 @@ export default function App() {
     }
   };
 
-  const openNewTaskModal = (defaultStatus: TaskStatus = 'pendiente') => {
+  // Backup Export / Import / Reset Demo Handlers
+  const handleExportBackup = () => {
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      tasks,
+      subtasks,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `enfoque-neojira-backup-${todayIso}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportBackup = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed.tasks) && Array.isArray(parsed.subtasks)) {
+        setTasks(parsed.tasks);
+        setSubtasks(parsed.subtasks);
+        setIsConnectModalOpen(false);
+      }
+    } catch {
+      // Invalid backup file
+    }
+  };
+
+  const handleResetDemoData = () => {
+    const seed = getInitialSeedData(todayIso, user ? user.uid : 'demo-user');
+    setTasks(seed.tasks);
+    setSubtasks(seed.subtasks);
+    setIsConnectModalOpen(false);
+  };
+
+  const openNewTaskModal = (
+    defaultStatus: TaskStatus = 'pendiente',
+    defaultDueDate?: string
+  ) => {
     setEditingTask(null);
     setModalDefaultStatus(defaultStatus);
+    setModalDefaultDueDate(defaultDueDate);
     setIsTaskModalOpen(true);
   };
 
@@ -751,7 +887,7 @@ export default function App() {
         onOpenConnectModal={() => setIsConnectModalOpen(true)}
       />
 
-      {/* Main Center Board (Kanban / Lista) */}
+      {/* Main Center Board (Kanban / Lista / Calendario) */}
       <main className="flex-1 min-w-0 flex h-full overflow-hidden">
         <KanbanBoard
           tasks={filteredTasks}
@@ -765,12 +901,15 @@ export default function App() {
           onSearchChange={setSearchQuery}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
+          sortBy={sortBy}
+          onSortByChange={setSortBy}
           weeklyDeliveriesCount={weeklyDeliveriesCount}
           todayIso={todayIso}
           userEmail={user?.email || null}
+          searchInputRef={searchInputRef}
         />
 
-        {/* Right Detail & Subtasks Inspector (Desktop Panel + Mobile Bottom Sheet) */}
+        {/* Right Detail & Subtasks Inspector (Desktop Panel + Mobile/Tablet Drawer) */}
         <TaskInspector
           task={selectedTask}
           subtasks={selectedTaskSubtasks}
@@ -779,6 +918,7 @@ export default function App() {
           onCloseMobileDrawer={() => setIsMobileDrawerOpen(false)}
           onToggleSubtask={handleToggleSubtask}
           onCycleSubtaskLabel={handleCycleSubtaskLabel}
+          onEditSubtaskTitle={handleEditSubtaskTitle}
           onAddSubtask={handleAddSubtask}
           onDeleteSubtask={handleDeleteSubtask}
           onStatusChange={handleStatusChange}
@@ -796,16 +936,20 @@ export default function App() {
         editingTask={editingTask}
         defaultStatus={modalDefaultStatus}
         defaultCategory={defaultCategoryForModal}
+        defaultDueDate={modalDefaultDueDate}
         todayIso={todayIso}
       />
 
-      {/* Cloud Sync & Mobile/PC PWA Connection Guide Modal */}
+      {/* Cloud Sync, Backup & Mobile/Tablet/PC Connection Guide Modal */}
       <SyncConnectModal
         isOpen={isConnectModalOpen}
         onClose={() => setIsConnectModalOpen(false)}
         userEmail={user?.email || null}
         onGoogleSignIn={handleGoogleSignIn}
         authError={authError}
+        onExportBackup={handleExportBackup}
+        onImportBackup={handleImportBackup}
+        onResetDemo={handleResetDemoData}
       />
     </div>
   );

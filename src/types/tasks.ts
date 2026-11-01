@@ -4,7 +4,9 @@ export type TaskStatus = 'pendiente' | 'en_marcha' | 'terminado';
 
 export type NavigationFilter = 'todo' | 'trabajo' | 'examen' | 'diario' | 'entregas';
 
-export type ViewMode = 'tablero' | 'lista';
+export type ViewMode = 'tablero' | 'lista' | 'calendario';
+
+export type SortOption = 'fecha' | 'progreso' | 'titulo';
 
 export interface TaskItem {
   id: string;

@@ -6,7 +6,7 @@ import {
   TaskItem,
   TaskStatus,
 } from '../types/tasks';
-import { validateTaskDraft } from '../utils/taskLogic';
+import { addDaysIso, validateTaskDraft } from '../utils/taskLogic';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -15,6 +15,7 @@ interface TaskModalProps {
   editingTask?: TaskItem | null;
   defaultStatus?: TaskStatus;
   defaultCategory?: TaskCategory;
+  defaultDueDate?: string;
   todayIso: string;
 }
 
@@ -25,13 +26,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   editingTask = null,
   defaultStatus = 'pendiente',
   defaultCategory = 'trabajo',
+  defaultDueDate,
   todayIso,
 }) => {
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [category, setCategory] = useState<TaskCategory>(defaultCategory);
   const [status, setStatus] = useState<TaskStatus>(defaultStatus);
-  const [dueDate, setDueDate] = useState(todayIso);
+  const [dueDate, setDueDate] = useState(defaultDueDate || todayIso);
   const [tag, setTag] = useState('');
   const [subtaskDrafts, setSubtaskDrafts] = useState<
     { title: string; scheduleLabel: string }[]
@@ -58,7 +60,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setSubtitle('');
       setCategory(defaultCategory);
       setStatus(defaultStatus);
-      setDueDate(todayIso);
+      setDueDate(defaultDueDate || todayIso);
       setTag(
         defaultCategory === 'examen'
           ? 'Temario'
@@ -72,7 +74,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         { title: 'Repaso final', scheduleLabel: 'Mañana' },
       ]);
     }
-  }, [isOpen, editingTask, defaultCategory, defaultStatus, todayIso]);
+  }, [isOpen, editingTask, defaultCategory, defaultStatus, defaultDueDate, todayIso]);
 
   if (!isOpen) return null;
 
@@ -100,11 +102,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       role="dialog"
       aria-modal="true"
       aria-label={editingTask ? 'Editar tarea' : 'Nueva tarea, trabajo o examen'}
     >
-      <div className="w-full max-w-lg rounded-2xl bg-[#131822] border border-[#263044] p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div className="w-full max-w-lg rounded-2xl bg-[#131822] border border-[#263044] p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-extrabold text-white font-display">
             {editingTask ? 'Editar elemento' : 'Nuevo Trabajo, Examen o Tarea'}
@@ -171,6 +176,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Ej. Examen de Estadística"
                 maxLength={120}
+                autoFocus
                 className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B0E14] border border-[#242F46] text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#FF6B4A]"
               />
             </div>
@@ -204,6 +210,22 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 onChange={(e) => setDueDate(e.target.value)}
                 className="w-full px-3 py-2.5 rounded-xl bg-[#0B0E14] border border-[#242F46] text-xs text-white focus:outline-none focus:border-[#FF6B4A]"
               />
+              <div className="flex items-center gap-1 mt-1.5">
+                {[
+                  { lbl: 'Hoy', iso: todayIso },
+                  { lbl: 'Mañana', iso: addDaysIso(todayIso, 1) },
+                  { lbl: '+7d', iso: addDaysIso(todayIso, 7) },
+                ].map((p) => (
+                  <button
+                    key={p.lbl}
+                    type="button"
+                    onClick={() => setDueDate(p.iso)}
+                    className="px-2 py-0.5 rounded bg-[#1B2333] hover:bg-[#253047] text-[10px] text-slate-300 cursor-pointer"
+                  >
+                    {p.lbl}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div>

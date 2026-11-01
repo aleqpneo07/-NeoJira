@@ -7,6 +7,7 @@ import {
   cycleScheduleLabel,
   filterAndSortTasks,
   formatSpanishDate,
+  getCalendarMonthDays,
   getInitialSeedData,
   getPriorityTodayDelivery,
   validateTaskDraft,
@@ -61,7 +62,7 @@ test('validateTaskDraft enforces required fields and blueprint length limits', (
   assert.equal(validRes.sanitized?.initialSubtasks?.length, 1);
 });
 
-test('filterAndSortTasks filters by category and search query accurately', () => {
+test('filterAndSortTasks filters by category, search query, and sortBy accurately', () => {
   const { tasks } = getInitialSeedData('2026-11-01');
   const exams = filterAndSortTasks(tasks, 'examen', '');
   assert.equal(exams.every((t) => t.category === 'examen'), true);
@@ -70,6 +71,15 @@ test('filterAndSortTasks filters by category and search query accurately', () =>
   const searchLumen = filterAndSortTasks(tasks, 'todo', 'Lumen');
   assert.equal(searchLumen.length, 1);
   assert.equal(searchLumen[0].id, 'task-estudio-lumen');
+
+  const byProgress = filterAndSortTasks(tasks, 'todo', '', 'progreso');
+  assert.equal(byProgress[0].progress >= byProgress[byProgress.length - 1].progress, true);
+});
+
+test('getCalendarMonthDays generates complete Monday-aligned week rows', () => {
+  const cells = getCalendarMonthDays(2026, 10, '2026-11-01'); // November 2026
+  assert.equal(cells.length % 7, 0);
+  assert.equal(cells.some((c) => c.isToday && c.isoDate === '2026-11-01'), true);
 });
 
 test('getPriorityTodayDelivery and weekly/monthly summaries compute expected values', () => {

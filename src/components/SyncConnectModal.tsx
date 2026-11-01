@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Check,
   CheckCircle2,
@@ -6,8 +6,11 @@ import {
   Copy,
   Download,
   ExternalLink,
+  FileDown,
+  FileUp,
   LogIn,
   QrCode,
+  RotateCcw,
   Share2,
   Smartphone,
   X,
@@ -21,6 +24,9 @@ interface SyncConnectModalProps {
   userEmail: string | null;
   onGoogleSignIn: () => void;
   authError: string | null;
+  onExportBackup?: () => void;
+  onImportBackup?: (file: File) => void;
+  onResetDemo?: () => void;
 }
 
 export const SyncConnectModal: React.FC<SyncConnectModalProps> = ({
@@ -29,12 +35,14 @@ export const SyncConnectModal: React.FC<SyncConnectModalProps> = ({
   userEmail,
   onGoogleSignIn,
   authError,
+  onExportBackup,
+  onImportBackup,
+  onResetDemo,
 }) => {
   const {
     isInstallable,
     isInstalled,
     isIOS,
-    isInIframe,
     standaloneUrl,
     chromeIntentUrl,
     install,
@@ -45,6 +53,7 @@ export const SyncConnectModal: React.FC<SyncConnectModalProps> = ({
   const [deviceTab, setDeviceTab] = useState<'opera' | 'chrome' | 'ios'>(
     isIOS ? 'ios' : 'opera'
   );
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -80,7 +89,7 @@ export const SyncConnectModal: React.FC<SyncConnectModalProps> = ({
       try {
         await navigator.share({
           title: 'Enfoque — Trabajos, Exámenes y Día a Día',
-          text: 'Abre este enlace para instalar Enfoque en tu móvil:',
+          text: 'Abre este enlace para instalar Enfoque en tu móvil o tableta:',
           url: standaloneUrl,
         });
       } catch {
@@ -94,9 +103,12 @@ export const SyncConnectModal: React.FC<SyncConnectModalProps> = ({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       role="dialog"
       aria-modal="true"
-      aria-label="Conectar e instalar en ordenador y móvil"
+      aria-label="Conectar e instalar en ordenador, tableta y móvil"
     >
       <div className="w-full max-w-lg rounded-2xl bg-[#131822] border border-[#263044] p-5 sm:p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
         {/* Header */}
@@ -107,10 +119,10 @@ export const SyncConnectModal: React.FC<SyncConnectModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-extrabold text-white font-display">
-                Instalar en Opera / Móvil y Sincronizar
+                Móvil, Tableta y PC · Sincronización y Copia
               </h2>
               <p className="text-xs text-slate-400">
-                Solución directa para Opera, Chrome y Safari
+                Sincronización en la nube, instalación PWA y copia de seguridad local
               </p>
             </div>
           </div>
@@ -144,17 +156,103 @@ export const SyncConnectModal: React.FC<SyncConnectModalProps> = ({
           </div>
         )}
 
+        {/* Google Cloud Sync Section */}
+        <div className="rounded-xl bg-[#0B0E14] border border-[#1E2638] p-4 space-y-2.5">
+          <div className="flex items-center gap-2 text-xs font-bold text-white">
+            <Cloud className="w-4 h-4 text-[#FF6B4A]" />
+            <span>Sincronización en tiempo real con Google (PC, Tableta y Móvil)</span>
+          </div>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Al iniciar sesión con Google, tus tareas y subtareas se sincronizan automáticamente al instante entre todos tus dispositivos.
+          </p>
+
+          {authError && (
+            <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+              {authError}
+            </p>
+          )}
+
+          {userEmail ? (
+            <div className="flex items-center gap-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 px-3.5 py-2.5 text-xs font-medium text-emerald-300">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span className="truncate">Sincronizado como {userEmail}</span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onGoogleSignIn}
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-white hover:bg-slate-200 text-[#0B0E14] font-semibold text-xs py-2.5 px-4 transition-colors cursor-pointer"
+            >
+              <LogIn className="w-4 h-4" />
+              <span>Conectar cuenta de Google</span>
+            </button>
+          )}
+        </div>
+
+        {/* Backup Export / Import JSON Section */}
+        {(onExportBackup || onImportBackup) && (
+          <div className="rounded-xl bg-[#0B0E14] border border-[#1E2638] p-4 space-y-2.5">
+            <p className="text-xs font-bold text-white">
+              Copia de seguridad directa (Exportar / Importar archivo JSON)
+            </p>
+            <p className="text-xs text-slate-400">
+              Guarda todas tus tareas en un archivo o pásalo por WhatsApp/Telegram entre tu PC, tableta y teléfono sin necesidad de conexión:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+              {onExportBackup && (
+                <button
+                  type="button"
+                  onClick={onExportBackup}
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-[#1B2333] hover:bg-[#253047] text-white font-semibold text-xs py-2.5 px-3 transition-colors cursor-pointer"
+                >
+                  <FileDown className="w-3.5 h-3.5 text-[#FF6B4A]" />
+                  <span>Exportar JSON</span>
+                </button>
+              )}
+              {onImportBackup && (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".json,application/json"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        onImportBackup(file);
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center justify-center gap-1.5 rounded-xl bg-[#1B2333] hover:bg-[#253047] text-white font-semibold text-xs py-2.5 px-3 transition-colors cursor-pointer"
+                  >
+                    <FileUp className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Importar JSON</span>
+                  </button>
+                </>
+              )}
+              {onResetDemo && (
+                <button
+                  type="button"
+                  onClick={onResetDemo}
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-[#1B2333] hover:bg-[#253047] text-slate-300 hover:text-white font-medium text-xs py-2.5 px-3 transition-colors cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Datos Demo</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Opera & Mobile Direct Action Box */}
         <div className="rounded-2xl bg-[#FF6B4A]/15 border border-[#FF6B4A]/50 p-4 space-y-3">
           <p className="text-xs font-bold text-[#FF6B4A]">
-            ¿Usas Opera en el móvil y no te deja instalar?
+            Instalar en pantalla de inicio (Móvil / Tableta)
           </p>
-          <p className="text-xs text-slate-200 leading-relaxed">
-            <strong>Opera móvil</strong> bloquea el botón automático de instalación dentro de esta
-            vista y esconde la opción en su barra superior. Tienes <strong>2 opciones</strong> para
-            tenerla hoy mismo en tu pantalla de inicio:
-          </p>
-
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
             <a
               href={standaloneUrl}
@@ -178,12 +276,12 @@ export const SyncConnectModal: React.FC<SyncConnectModalProps> = ({
               className="sm:col-span-2 flex items-center justify-center gap-2 rounded-xl bg-[#1B2333] hover:bg-[#253047] text-white font-semibold text-xs py-2.5 px-3 transition-colors cursor-pointer"
             >
               <Share2 className="w-4 h-4 text-[#FF6B4A] shrink-0" />
-              <span>Compartir enlace a otro navegador</span>
+              <span>Compartir enlace a otro dispositivo o navegador</span>
             </button>
           </div>
         </div>
 
-        {/* Step-by-Step Instructions with Opera Tab First */}
+        {/* Step-by-Step Instructions */}
         <div className="rounded-xl bg-[#0B0E14] border border-[#1E2638] p-4 space-y-3">
           <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-[#131822] border border-[#1E2638]">
             <button
@@ -217,49 +315,25 @@ export const SyncConnectModal: React.FC<SyncConnectModalProps> = ({
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              iPhone
+              iPhone / iPad
             </button>
           </div>
 
           {deviceTab === 'opera' && (
             <div className="space-y-2 text-xs text-slate-300 leading-relaxed">
-              <p className="font-semibold text-white">
-                Cómo añadirla a tu pantalla de inicio desde Opera:
-              </p>
               <ol className="space-y-1.5 pl-4 list-decimal">
                 <li>
-                  Primero pulsa <strong>«1. Abrir fuera de vista previa»</strong> arriba para que la
-                  página cargue directamente en Opera.
+                  Abre la página directamente en Opera y toca los <strong>tres puntos (⋮)</strong> arriba a la derecha.
                 </li>
                 <li>
-                  En Opera, <strong>NO</strong> pulses el botón de la «O» de abajo: mira{' '}
-                  <strong>arriba del todo a la derecha</strong> (al lado de la dirección web) y toca
-                  los <strong>tres puntos (⋮)</strong>.
-                </li>
-                <li>
-                  En ese menú superior, toca <strong>«Pantalla de inicio»</strong> (icono de un
-                  móvil con un signo <code>+</code>) y pulsa <strong>«Añadir»</strong>.
+                  Pulsa <strong>«Pantalla de inicio»</strong> y confirma con <strong>«Añadir»</strong>.
                 </li>
               </ol>
-              <div className="rounded-lg bg-[#161D2B] border border-[#26324A] p-2.5 text-[11px] text-slate-300">
-                <strong className="text-[#FF6B4A]">Nota si tienes Xiaomi / Redmi / Samsung:</strong>{' '}
-                Opera viene por defecto sin permiso para crear iconos. Si le das a «Pantalla de
-                inicio» y no aparece el icono, ve a{' '}
-                <strong>
-                  Ajustes del móvil → Aplicaciones → Opera → Permisos → Activa «Accesos directos en
-                  pantalla de inicio»
-                </strong>
-                .
-              </div>
             </div>
           )}
 
           {deviceTab === 'chrome' && (
             <ol className="text-xs text-slate-300 space-y-1.5 pl-4 list-decimal leading-relaxed">
-              <li>
-                Pulsa el botón blanco <strong>«Abrir en Chrome para instalar»</strong> de arriba o
-                pega el enlace en Google Chrome.
-              </li>
               <li>
                 Toca los <strong>tres puntos (⋮)</strong> arriba a la derecha en Chrome.
               </li>
@@ -273,11 +347,10 @@ export const SyncConnectModal: React.FC<SyncConnectModalProps> = ({
           {deviceTab === 'ios' && (
             <ol className="text-xs text-slate-300 space-y-1.5 pl-4 list-decimal leading-relaxed">
               <li>
-                En iPhone, Apple bloquea la instalación desde Opera o Chrome: debes abrir el enlace
-                en <strong>Safari</strong>.
+                Abre el enlace en <strong>Safari</strong> (iPhone o iPad).
               </li>
               <li>
-                En Safari, toca el botón <strong>Compartir</strong> abajo y selecciona{' '}
+                Toca el botón <strong>Compartir</strong> y selecciona{' '}
                 <strong>«Añadir a pantalla de inicio»</strong>.
               </li>
             </ol>
@@ -322,40 +395,6 @@ export const SyncConnectModal: React.FC<SyncConnectModalProps> = ({
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Google Cloud Sync Section */}
-        <div className="rounded-xl bg-[#0B0E14] border border-[#1E2638] p-4 space-y-2.5">
-          <div className="flex items-center gap-2 text-xs font-bold text-white">
-            <Cloud className="w-4 h-4 text-[#FF6B4A]" />
-            <span>Sincronización en tiempo real con Google</span>
-          </div>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Aunque la uses directamente desde una pestaña o marcador de Opera en el móvil y en el
-            PC, al iniciar sesión con Google tendrás exactamente los mismos datos al instante.
-          </p>
-
-          {authError && (
-            <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
-              {authError}
-            </p>
-          )}
-
-          {userEmail ? (
-            <div className="flex items-center gap-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 px-3.5 py-2.5 text-xs font-medium text-emerald-300">
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span className="truncate">Sincronizado como {userEmail}</span>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={onGoogleSignIn}
-              className="w-full flex items-center justify-center gap-2 rounded-xl bg-white hover:bg-slate-200 text-[#0B0E14] font-semibold text-xs py-2.5 px-4 transition-colors cursor-pointer"
-            >
-              <LogIn className="w-4 h-4" />
-              <span>Conectar cuenta de Google</span>
-            </button>
-          )}
         </div>
       </div>
     </div>

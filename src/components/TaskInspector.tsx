@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Calendar,
   Check,
   Clock,
   Edit3,
+  Pencil,
   Plus,
   Trash2,
   X,
@@ -15,7 +16,7 @@ import {
   TaskItem,
   TaskStatus,
 } from '../types/tasks';
-import { cycleScheduleLabel, formatSpanishDate } from '../utils/taskLogic';
+import { addDaysIso, cycleScheduleLabel, formatSpanishDate } from '../utils/taskLogic';
 
 interface TaskInspectorProps {
   task: TaskItem | null;
@@ -25,6 +26,7 @@ interface TaskInspectorProps {
   onCloseMobileDrawer: () => void;
   onToggleSubtask: (subtaskId: string) => void;
   onCycleSubtaskLabel: (subtaskId: string, nextLabel: string) => void;
+  onEditSubtaskTitle: (subtaskId: string, newTitle: string) => void;
   onAddSubtask: (taskId: string, title: string, scheduleLabel: string) => void;
   onDeleteSubtask: (subtaskId: string) => void;
   onStatusChange: (taskId: string, status: TaskStatus) => void;
@@ -41,6 +43,7 @@ export const TaskInspector: React.FC<TaskInspectorProps> = ({
   onCloseMobileDrawer,
   onToggleSubtask,
   onCycleSubtaskLabel,
+  onEditSubtaskTitle,
   onAddSubtask,
   onDeleteSubtask,
   onStatusChange,
@@ -51,6 +54,15 @@ export const TaskInspector: React.FC<TaskInspectorProps> = ({
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [newSubtaskSchedule, setNewSubtaskSchedule] = useState('En curso');
   const [isEditingDate, setIsEditingDate] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
+  const [editingSubtaskText, setEditingSubtaskText] = useState('');
+
+  useEffect(() => {
+    setConfirmDelete(false);
+    setEditingSubtaskId(null);
+    setIsEditingDate(false);
+  }, [task?.id]);
 
   const handleCreateSubtask = (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,13 +73,21 @@ export const TaskInspector: React.FC<TaskInspectorProps> = ({
     setNewSubtaskTitle('');
   };
 
+  const handleSaveSubtaskEdit = (subtaskId: string) => {
+    const trimmed = editingSubtaskText.trim();
+    if (trimmed) {
+      onEditSubtaskTitle(subtaskId, trimmed);
+    }
+    setEditingSubtaskId(null);
+  };
+
   const renderInspectorBody = () => {
     if (!task) {
       return (
         <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
           <p className="text-sm font-semibold text-white">Selecciona una tarea</p>
           <p className="text-xs text-slate-500 mt-1">
-            Haz clic en cualquier tarjeta del tablero para ver su progreso, fecha de entrega y
+            Haz clic en cualquier tarjeta del tablero o calendario para ver su progreso, fecha de entrega y
             lista de subtareas.
           </p>
         </div>
@@ -79,7 +99,7 @@ export const TaskInspector: React.FC<TaskInspectorProps> = ({
 
     return (
       <div className="space-y-4">
-        {/* 1. Highlighted Accent Hero Card (Matches reference image's top-right orange/peach card) */}
+        {/* 1. Highlighted Accent Hero Card */}
         <div className="rounded-2xl bg-[#FF6B4A] text-[#0B0E14] p-5 shadow-lg space-y-4">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
@@ -102,7 +122,7 @@ export const TaskInspector: React.FC<TaskInspectorProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => onDeleteTask(task.id)}
+                onClick={() => setConfirmDelete((v) => !v)}
                 aria-label={`Eliminar ${task.title}`}
                 className="p-2 rounded-xl bg-black/10 hover:bg-black/20 text-[#0B0E14] transition-colors cursor-pointer"
               >
@@ -119,7 +139,32 @@ export const TaskInspector: React.FC<TaskInspectorProps> = ({
             </div>
           </div>
 
-          {/* Progress Percentage & Steps Counter (No Euro price as requested by user) */}
+          {confirmDelete && (
+            <div className="rounded-xl bg-[#0B0E14]/95 text-white p-3 flex items-center justify-between gap-2">
+              <span className="text-xs font-medium">¿Eliminar esta tarea y sus pasos?</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-medium text-slate-200 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmDelete(false);
+                    onDeleteTask(task.id);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-rose-500 hover:bg-rose-400 text-[11px] font-bold text-[#0B0E14] cursor-pointer"
+                >
+                  Sí, borrar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Progress Percentage & Steps Counter */}
           <div className="flex items-end justify-between pt-1">
             <div>
               <p className="text-[11px] font-semibold opacity-75">Progreso</p>
@@ -147,7 +192,7 @@ export const TaskInspector: React.FC<TaskInspectorProps> = ({
           </div>
         </div>
 
-        {/* 2. Delivery Date & Status Card (Matches "Entrega / 6 de noviembre, 2026" card in reference) */}
+        {/* 2. Delivery Date & Status Card */}
         <div className="rounded-2xl bg-[#131822] border border-[#1F2737] p-4 space-y-3.5">
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -168,7 +213,31 @@ export const TaskInspector: React.FC<TaskInspectorProps> = ({
           </div>
 
           {isEditingDate && (
-            <div className="pt-1">
+            <div className="pt-1 space-y-2">
+              <div className="grid grid-cols-4 gap-1.5">
+                {[
+                  { label: 'Hoy', iso: todayIso },
+                  { label: 'Mañana', iso: addDaysIso(todayIso, 1) },
+                  { label: '+3 días', iso: addDaysIso(todayIso, 3) },
+                  { label: '+1 sem', iso: addDaysIso(todayIso, 7) },
+                ].map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => {
+                      onDateChange(task.id, preset.iso);
+                      setIsEditingDate(false);
+                    }}
+                    className={`py-1.5 px-2 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
+                      task.dueDate === preset.iso
+                        ? 'bg-[#FF6B4A]/20 border-[#FF6B4A] text-white'
+                        : 'bg-[#0B0E14] border-[#242F46] text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
               <label htmlFor="inspector-due-date" className="sr-only">
                 Fecha de entrega
               </label>
@@ -213,73 +282,111 @@ export const TaskInspector: React.FC<TaskInspectorProps> = ({
           </div>
         </div>
 
-        {/* 3. Interactive Subtasks Checklist Card (Matches reference image bottom-right card) */}
+        {/* 3. Interactive Subtasks Checklist Card */}
         <div className="rounded-2xl bg-[#131822] border border-[#1F2737] p-4 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-semibold text-slate-300">
               Pasos y subtareas ({task.completedSubtasks}/{task.totalSubtasks})
             </h3>
-            <span className="text-[11px] text-slate-500">Toca para completar</span>
+            <span className="text-[11px] text-slate-500">Toca para completar o editar</span>
           </div>
 
           <ul className="divide-y divide-[#1E2638]" aria-label="Lista de subtareas">
             {sortedSubtasks.map((sub) => (
               <li
                 key={sub.id}
-                className="py-2.5 flex items-center justify-between gap-2.5 group"
+                className="py-2.5 flex items-center justify-between gap-2 group"
               >
-                <button
-                  type="button"
-                  onClick={() => onToggleSubtask(sub.id)}
-                  className="flex items-center gap-3 text-left flex-1 min-w-0 py-1 cursor-pointer"
-                >
-                  <span
-                    className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${
-                      sub.completed
-                        ? 'bg-white text-[#0B0E14]'
-                        : 'border-2 border-slate-600 group-hover:border-[#FF6B4A]'
-                    }`}
-                  >
-                    {sub.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                  </span>
-                  <span
-                    className={`text-xs leading-snug transition-colors ${
-                      sub.completed ? 'line-through text-slate-500' : 'text-slate-100 font-medium'
-                    }`}
-                  >
-                    {sub.title}
-                  </span>
-                </button>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {!sub.completed && (
+                {editingSubtaskId === sub.id ? (
+                  <div className="flex items-center gap-1.5 flex-1">
+                    <input
+                      type="text"
+                      value={editingSubtaskText}
+                      onChange={(e) => setEditingSubtaskText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveSubtaskEdit(sub.id);
+                        if (e.key === 'Escape') setEditingSubtaskId(null);
+                      }}
+                      autoFocus
+                      maxLength={140}
+                      className="flex-1 px-2.5 py-1.5 rounded-lg bg-[#0B0E14] border border-[#FF6B4A] text-xs text-white focus:outline-none"
+                    />
                     <button
                       type="button"
-                      onClick={() =>
-                        onCycleSubtaskLabel(sub.id, cycleScheduleLabel(sub.scheduleLabel))
-                      }
-                      aria-label={`Cambiar momento de ${sub.title}`}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                        sub.scheduleLabel === 'En curso' || sub.scheduleLabel === 'Hoy'
-                          ? 'bg-[#FF6B4A]/20 text-[#FF6B4A]'
-                          : sub.scheduleLabel === 'Mañana'
-                          ? 'bg-amber-500/15 text-amber-300'
-                          : 'bg-[#1B2333] text-slate-400 hover:text-slate-200'
-                      }`}
+                      onClick={() => handleSaveSubtaskEdit(sub.id)}
+                      className="px-2.5 py-1.5 rounded-lg bg-[#FF6B4A] text-[#0B0E14] text-[11px] font-bold cursor-pointer"
                     >
-                      {sub.scheduleLabel || '+ Cuándo'}
+                      OK
                     </button>
-                  )}
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onToggleSubtask(sub.id)}
+                      className="flex items-center gap-3 text-left flex-1 min-w-0 py-1 cursor-pointer"
+                    >
+                      <span
+                        className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${
+                          sub.completed
+                            ? 'bg-white text-[#0B0E14]'
+                            : 'border-2 border-slate-600 group-hover:border-[#FF6B4A]'
+                        }`}
+                      >
+                        {sub.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                      </span>
+                      <span
+                        className={`text-xs leading-snug transition-colors ${
+                          sub.completed ? 'line-through text-slate-500' : 'text-slate-100 font-medium'
+                        }`}
+                      >
+                        {sub.title}
+                      </span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => onDeleteSubtask(sub.id)}
-                    aria-label={`Eliminar subtarea ${sub.title}`}
-                    className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800/60 transition-colors cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {!sub.completed && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onCycleSubtaskLabel(sub.id, cycleScheduleLabel(sub.scheduleLabel))
+                          }
+                          aria-label={`Cambiar momento de ${sub.title}`}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                            sub.scheduleLabel === 'En curso' || sub.scheduleLabel === 'Hoy'
+                              ? 'bg-[#FF6B4A]/20 text-[#FF6B4A]'
+                              : sub.scheduleLabel === 'Mañana'
+                              ? 'bg-amber-500/15 text-amber-300'
+                              : 'bg-[#1B2333] text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {sub.scheduleLabel || '+ Cuándo'}
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingSubtaskId(sub.id);
+                          setEditingSubtaskText(sub.title);
+                        }}
+                        aria-label={`Renombrar subtarea ${sub.title}`}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800/60 transition-colors cursor-pointer"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => onDeleteSubtask(sub.id)}
+                        aria-label={`Eliminar subtarea ${sub.title}`}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800/60 transition-colors cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </>
+                )}
               </li>
             ))}
 
@@ -349,16 +456,19 @@ export const TaskInspector: React.FC<TaskInspectorProps> = ({
         {renderInspectorBody()}
       </aside>
 
-      {/* Mobile Bottom Sheet Drawer */}
+      {/* Mobile & Tablet Bottom Sheet / Slide-over Drawer */}
       {isMobileDrawerOpen && task && (
         <div
-          className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end bg-black/70 backdrop-blur-xs"
+          className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end md:items-end bg-black/70 backdrop-blur-xs"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) onCloseMobileDrawer();
+          }}
           role="dialog"
           aria-modal="true"
           aria-label={`Detalle de ${task.title}`}
         >
-          <div className="w-full max-h-[88vh] rounded-t-3xl bg-[#0F131C] border-t border-[#263044] px-4 pt-2 pb-6 overflow-y-auto shadow-2xl">
-            <div className="w-10 h-1.5 bg-slate-700 rounded-full mx-auto my-2" />
+          <div className="w-full md:max-w-md max-h-[88vh] md:max-h-full md:h-full rounded-t-3xl md:rounded-none md:rounded-l-3xl bg-[#0F131C] border-t md:border-t-0 md:border-l border-[#263044] px-4 pt-2 pb-8 overflow-y-auto shadow-2xl">
+            <div className="w-10 h-1.5 bg-slate-700 rounded-full mx-auto my-2 md:hidden" />
             {renderInspectorBody()}
           </div>
         </div>
