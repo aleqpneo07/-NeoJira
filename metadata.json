@@ -1,0 +1,6 @@
+{
+  "name": "Enfoque — Gestor de Trabajos, Exámenes y Día a Día",
+  "description": "Gestor visual e interactivo en modo oscuro para organizar trabajos, exámenes y tareas diarias con sincronización en tiempo real entre PC y móvil.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

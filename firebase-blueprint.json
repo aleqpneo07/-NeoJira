@@ -1,0 +1,168 @@
+{
+  "entities": {
+    "Task": {
+      "title": "Task",
+      "description": "A work project, academic exam, or daily life task managed by the user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "The authenticated Firebase UID of the task owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Primary title of the project, exam, or daily task.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "subtitle": {
+          "type": "string",
+          "description": "Client, subject, course, or personal context label.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "category": {
+          "type": "string",
+          "description": "Area classification: trabajo, examen, or diario.",
+          "enum": ["trabajo", "examen", "diario"],
+          "minLength": 6,
+          "maxLength": 7
+        },
+        "status": {
+          "type": "string",
+          "description": "Board workflow column: pendiente, en_marcha, or terminado.",
+          "enum": ["pendiente", "en_marcha", "terminado"],
+          "minLength": 9,
+          "maxLength": 9
+        },
+        "dueDate": {
+          "type": "string",
+          "description": "Due date in YYYY-MM-DD format.",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "tag": {
+          "type": "string",
+          "description": "Short phase or status badge text.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "progress": {
+          "type": "number",
+          "description": "Completion percentage from 0 to 100."
+        },
+        "totalSubtasks": {
+          "type": "number",
+          "description": "Total count of subtasks from 0 to 50."
+        },
+        "completedSubtasks": {
+          "type": "number",
+          "description": "Count of completed subtasks from 0 to 50."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the task was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the task was last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "title",
+        "subtitle",
+        "category",
+        "status",
+        "dueDate",
+        "tag",
+        "progress",
+        "totalSubtasks",
+        "completedSubtasks",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Subtask": {
+      "title": "Subtask",
+      "description": "An actionable checklist step or exam topic belonging to a parent Task.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "The authenticated Firebase UID of the subtask owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "taskId": {
+          "type": "string",
+          "description": "Document ID of the parent Task in /tasks/{taskId}.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Step description or study topic title.",
+          "minLength": 1,
+          "maxLength": 140
+        },
+        "completed": {
+          "type": "boolean",
+          "description": "Whether the subtask has been completed."
+        },
+        "scheduleLabel": {
+          "type": "string",
+          "description": "Optional timing cue such as En curso, Hoy, or Mañana.",
+          "minLength": 0,
+          "maxLength": 30
+        },
+        "sortOrder": {
+          "type": "number",
+          "description": "Display order index within the parent task."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the subtask was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the subtask was last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "taskId",
+        "title",
+        "completed",
+        "scheduleLabel",
+        "sortOrder",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/tasks/{taskId}": {
+      "schema": {
+        "$ref": "#/entities/Task"
+      },
+      "description": "Stores user tasks, academic exams, and work projects."
+    },
+    "/subtasks/{subtaskId}": {
+      "schema": {
+        "$ref": "#/entities/Subtask"
+      },
+      "description": "Stores individual checklist steps linked to a parent task."
+    }
+  }
+}
