@@ -3,27 +3,2474 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Enfoque — Gestor de Trabajos, Exámenes y Día a Día</title>
-    <meta name="description" content="Gestor visual e interactivo en modo oscuro para organizar trabajos, exámenes y tareas diarias con sincronización en tiempo real entre PC y móvil." />
-    <meta property="og:title" content="Enfoque — Gestor de Trabajos, Exámenes y Día a Día" />
-    <meta property="og:description" content="Gestor visual e interactivo en modo oscuro para organizar trabajos, exámenes y tareas diarias con sincronización en tiempo real entre PC y móvil." />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
+    <title>Enfoque (NeoJira) — Gestor de Trabajos, Exámenes y Calendario</title>
+    <meta name="description" content="Gestor visual e interactivo en modo oscuro para organizar trabajos, exámenes y tareas diarias en PC, Tableta y Móvil." />
     <meta name="theme-color" content="#0B0E14" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Enfoque" />
-    <link rel="manifest" href="/manifest.json" crossorigin="use-credentials" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400..700&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              display: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+              sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
+              mono: ['"JetBrains Mono"', 'monospace'],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+        background-color: #0B0E14;
+        color: #F3F4F6;
+      }
+      h1, h2, h3, .font-display {
+        font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      }
+      .font-mono-num {
+        font-family: 'JetBrains Mono', monospace;
+        font-variant-numeric: tabular-nums;
+      }
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #1F2737;
+        border-radius: 9999px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #334155;
+      }
+    </style>
   </head>
   <body class="bg-[#0B0E14] text-[#F3F4F6] antialiased selection:bg-[#FF6B4A]/30 selection:text-white">
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+
+    <script type="module">
+      import React, { useState, useEffect, useMemo, useRef } from 'https://esm.sh/react@19.0.0';
+      import { createRoot } from 'https://esm.sh/react-dom@19.0.0/client';
+      import htm from 'https://esm.sh/htm@3.1.1';
+      import {
+        ArrowRight,
+        BookOpen,
+        Briefcase,
+        Calendar as CalendarIcon,
+        CalendarClock,
+        Check,
+        CheckCircle2,
+        ChevronLeft,
+        ChevronRight,
+        Clock,
+        Cloud,
+        Edit3,
+        FileDown,
+        FileUp,
+        GripVertical,
+        KeyRound,
+        LayoutGrid,
+        List,
+        LogIn,
+        LogOut,
+        Pencil,
+        Plus,
+        RefreshCw,
+        RotateCcw,
+        Search,
+        SlidersHorizontal,
+        Smartphone,
+        SunMedium,
+        Trash2,
+        UserCheck,
+        WifiOff,
+        X,
+      } from 'https://esm.sh/lucide-react@0.469.0?deps=react@19.0.0';
+
+      const html = htm.bind(React.createElement);
+
+      const LOCAL_STORAGE_TASKS_KEY = 'enfoque_local_tasks_v1';
+      const LOCAL_STORAGE_SUBTASKS_KEY = 'enfoque_local_subtasks_v1';
+      const CLOUD_ACCOUNT_STORAGE_KEY = 'enfoque_cloud_account_v1';
+      const CLOUD_LAST_SYNC_ID_KEY = 'enfoque_cloud_last_sync_id_v1';
+      const NTFY_BASE_URL = 'https://ntfy.sh';
+
+      function deriveAccountTopicId(identifier, password) {
+        const cleanUser = String(identifier || '').trim().toLowerCase();
+        const cleanPass = String(password || '').trim();
+        const raw = `enfoque-neojira-sync-v1::${cleanUser}::${cleanPass}`;
+
+        let h1 = 0xdeadbeef ^ raw.length;
+        let h2 = 0x41c6ce57 ^ raw.length;
+        let h3 = 0x9e3779b9 ^ raw.length;
+        let h4 = 0x85ebca6b ^ raw.length;
+
+        for (let i = 0; i < raw.length; i++) {
+          const ch = raw.charCodeAt(i);
+          h1 = Math.imul(h1 ^ ch, 2654435761);
+          h2 = Math.imul(h2 ^ ch, 1597334677);
+          h3 = Math.imul(h3 ^ (ch + i), 2246822519);
+          h4 = Math.imul(h4 ^ (ch * 31), 3266489917);
+        }
+
+        h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+        h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+        h3 = Math.imul(h3 ^ (h3 >>> 16), 2246822507) ^ Math.imul(h4 ^ (h4 >>> 13), 3266489909);
+        h4 = Math.imul(h4 ^ (h4 >>> 16), 2246822507) ^ Math.imul(h3 ^ (h3 >>> 13), 3266489909);
+
+        const hex =
+          (h1 >>> 0).toString(16).padStart(8, '0') +
+          (h2 >>> 0).toString(16).padStart(8, '0') +
+          (h3 >>> 0).toString(16).padStart(8, '0') +
+          (h4 >>> 0).toString(16).padStart(8, '0');
+
+        return `enfoque_acct_${hex}`;
+      }
+
+      async function extractPayloadFromNtfyEvent(evt) {
+        if (!evt || evt.event !== 'message') return null;
+        try {
+          let rawJson = '';
+          if (evt.attachment?.url) {
+            const res = await fetch(evt.attachment.url, { cache: 'no-store' });
+            if (!res.ok) return null;
+            rawJson = await res.text();
+          } else if (typeof evt.message === 'string') {
+            rawJson = evt.message.replace(/^\uFEFF/, '').trim();
+          }
+          if (!rawJson || !rawJson.startsWith('{')) return null;
+          const parsed = JSON.parse(rawJson);
+          if (
+            parsed &&
+            (parsed.type === 'state_sync' || parsed.type === 'request_sync') &&
+            Array.isArray(parsed.tasks) &&
+            Array.isArray(parsed.subtasks)
+          ) {
+            return parsed;
+          }
+        } catch {}
+        return null;
+      }
+
+      async function publishCloudSnapshot(topicId, payload) {
+        try {
+          const res = await fetch(`${NTFY_BASE_URL}/${encodeURIComponent(topicId)}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'text/plain;charset=utf-8',
+              Title: 'Enfoque Sync',
+            },
+            body: JSON.stringify(payload),
+          });
+          return res.ok;
+        } catch {
+          return false;
+        }
+      }
+
+      async function fetchLatestCloudSnapshot(topicId) {
+        try {
+          const res = await fetch(
+            `${NTFY_BASE_URL}/${encodeURIComponent(topicId)}/json?poll=1&since=24h`,
+            { cache: 'no-store' }
+          );
+          if (!res.ok) return null;
+          const text = await res.text();
+          const lines = text
+            .split('\n')
+            .map((l) => l.trim())
+            .filter(Boolean);
+          for (let i = lines.length - 1; i >= 0; i--) {
+            try {
+              const evt = JSON.parse(lines[i]);
+              const payload = await extractPayloadFromNtfyEvent(evt);
+              if (payload && payload.type === 'state_sync') {
+                return payload;
+              }
+            } catch {}
+          }
+          return null;
+        } catch {
+          return null;
+        }
+      }
+
+      function subscribeToCloudTopic(topicId, onPayload, onStatusChange) {
+        let eventSource = null;
+        let reconnectTimer = null;
+        let closed = false;
+
+        const connect = () => {
+          if (closed) return;
+          try {
+            eventSource = new EventSource(`${NTFY_BASE_URL}/${encodeURIComponent(topicId)}/sse`);
+            eventSource.onopen = () => onStatusChange?.(true);
+            eventSource.onmessage = async (e) => {
+              try {
+                const evt = JSON.parse(e.data);
+                const payload = await extractPayloadFromNtfyEvent(evt);
+                if (payload) onPayload(payload);
+              } catch {}
+            };
+            eventSource.onerror = () => {
+              onStatusChange?.(false);
+              if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+              }
+              if (!closed) {
+                reconnectTimer = window.setTimeout(connect, 4000);
+              }
+            };
+          } catch {
+            onStatusChange?.(false);
+          }
+        };
+
+        connect();
+        return () => {
+          closed = true;
+          if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+          if (eventSource) eventSource.close();
+        };
+      }
+
+      const CATEGORY_LABELS = {
+        trabajo: 'Trabajos',
+        examen: 'Exámenes',
+        diario: 'Día a día',
+      };
+
+      const STATUS_LABELS = {
+        pendiente: 'Pendiente',
+        en_marcha: 'En marcha',
+        terminado: 'Terminado',
+      };
+
+      const SPANISH_MONTHS = [
+        'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+        'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+      ];
+
+      const SPANISH_MONTHS_SHORT = [
+        'ene', 'feb', 'mar', 'abr', 'may', 'jun',
+        'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+      ];
+
+      const WEEKDAYS_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+      function getTodayIsoString() {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
+
+      function addDaysIso(baseIso, days) {
+        const [y, m, d] = baseIso.split('-').map(Number);
+        const dt = new Date(Date.UTC(y, (m || 1) - 1, (d || 1) + days));
+        return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+      }
+
+      function makeSafeId(prefix) {
+        return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      }
+
+      function calculateTaskProgress(subtasks, fallbackStatus) {
+        const totalSubtasks = Math.min(subtasks.length, 50);
+        if (totalSubtasks === 0) {
+          const fallbackProgress =
+            fallbackStatus === 'terminado' ? 100 : fallbackStatus === 'en_marcha' ? 50 : 0;
+          return { progress: fallbackProgress, totalSubtasks: 0, completedSubtasks: 0 };
+        }
+        const completedSubtasks = subtasks.slice(0, totalSubtasks).filter((s) => s.completed).length;
+        const progress = Math.round((completedSubtasks / totalSubtasks) * 100);
+        return { progress, totalSubtasks, completedSubtasks };
+      }
+
+      function formatSpanishDate(isoDate, todayIso) {
+        if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(isoDate)) {
+          return {
+            fullDate: isoDate,
+            shortLabel: isoDate,
+            isToday: false,
+            isTomorrow: false,
+            isOverdue: false,
+            isThisWeek: false,
+            diffDays: 99,
+          };
+        }
+        const [y, m, d] = isoDate.split('-').map(Number);
+        const [ty, tm, td] = todayIso.split('-').map(Number);
+        const diffDays = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000);
+        const fullDate = `${d} de ${SPANISH_MONTHS[(m - 1 + 12) % 12]}, ${y}`;
+        const isToday = diffDays === 0;
+        const isTomorrow = diffDays === 1;
+        const isOverdue = diffDays < 0;
+        const isThisWeek = diffDays >= 0 && diffDays <= 7;
+
+        let shortLabel = `${d} ${SPANISH_MONTHS_SHORT[(m - 1 + 12) % 12]}`;
+        if (isToday) shortLabel = 'Entrega hoy';
+        else if (isTomorrow) shortLabel = 'Mañana';
+        else if (isOverdue) shortLabel = `Hace ${Math.abs(diffDays)} d`;
+
+        return { fullDate, shortLabel, isToday, isTomorrow, isOverdue, isThisWeek, diffDays };
+      }
+
+      function getCalendarMonthDays(year, monthIndex, todayIso) {
+        const firstOfMonth = new Date(Date.UTC(year, monthIndex, 1));
+        const startDayOfWeek = (firstOfMonth.getUTCDay() + 6) % 7;
+        const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+        const totalCells = Math.ceil((startDayOfWeek + daysInMonth) / 7) * 7;
+        const cells = [];
+
+        for (let i = 0; i < totalCells; i++) {
+          const dayOffset = i - startDayOfWeek + 1;
+          const dt = new Date(Date.UTC(year, monthIndex, dayOffset));
+          const isoDate = `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+          cells.push({
+            isoDate,
+            dayNumber: dt.getUTCDate(),
+            isCurrentMonth: dt.getUTCMonth() === monthIndex,
+            isToday: isoDate === todayIso,
+          });
+        }
+        return cells;
+      }
+
+      function cycleScheduleLabel(current) {
+        const order = ['', 'En curso', 'Hoy', 'Mañana'];
+        const idx = order.indexOf(current);
+        return order[(idx + 1) % order.length];
+      }
+
+      function getInitialSeedData(todayIso, ownerId = 'demo-user') {
+        const tasks = [
+          {
+            id: 'task-estudio-lumen',
+            ownerId,
+            title: 'Identidad Estudio Lumen',
+            subtitle: 'Estudio Lumen',
+            category: 'trabajo',
+            status: 'en_marcha',
+            dueDate: todayIso,
+            tag: 'Identidad visual',
+            progress: 60,
+            totalSubtasks: 5,
+            completedSubtasks: 3,
+          },
+          {
+            id: 'task-examen-mercantil',
+            ownerId,
+            title: 'Examen Parcial de Estadística',
+            subtitle: 'Universidad · Aula B4',
+            category: 'examen',
+            status: 'en_marcha',
+            dueDate: addDaysIso(todayIso, 3),
+            tag: 'Temas 1 al 5',
+            progress: 50,
+            totalSubtasks: 4,
+            completedSubtasks: 2,
+          },
+          {
+            id: 'task-memoria-tfg',
+            ownerId,
+            title: 'Informe Técnico de Arquitectura',
+            subtitle: 'Proyecto Ingeniería',
+            category: 'trabajo',
+            status: 'pendiente',
+            dueDate: addDaysIso(todayIso, 5),
+            tag: 'Borrador inicial',
+            progress: 25,
+            totalSubtasks: 4,
+            completedSubtasks: 1,
+          },
+          {
+            id: 'task-examen-algoritmos',
+            ownerId,
+            title: 'Examen Final de Algoritmos',
+            subtitle: 'Facultad Informática',
+            category: 'examen',
+            status: 'pendiente',
+            dueDate: addDaysIso(todayIso, 9),
+            tag: 'Práctica + Teoría',
+            progress: 25,
+            totalSubtasks: 4,
+            completedSubtasks: 1,
+          },
+          {
+            id: 'task-rutina-diaria',
+            ownerId,
+            title: 'Organización Semanal y Entreno',
+            subtitle: 'Bienestar personal',
+            category: 'diario',
+            status: 'en_marcha',
+            dueDate: todayIso,
+            tag: 'Hábitos clave',
+            progress: 75,
+            totalSubtasks: 4,
+            completedSubtasks: 3,
+          },
+          {
+            id: 'task-rebranding-bodega',
+            ownerId,
+            title: 'Presentación de Caso Práctico',
+            subtitle: 'Seminario Estratégico',
+            category: 'trabajo',
+            status: 'terminado',
+            dueDate: addDaysIso(todayIso, -2),
+            tag: 'Entregado',
+            progress: 100,
+            totalSubtasks: 3,
+            completedSubtasks: 3,
+          },
+          {
+            id: 'task-gestiones-mes',
+            ownerId,
+            title: 'Renovación de Matrícula y Becas',
+            subtitle: 'Secretaría Académica',
+            category: 'diario',
+            status: 'terminado',
+            dueDate: addDaysIso(todayIso, -4),
+            tag: 'Completado',
+            progress: 100,
+            totalSubtasks: 3,
+            completedSubtasks: 3,
+          },
+        ];
+
+        const subtasks = [
+          { id: 'sub-lumen-1', ownerId, taskId: 'task-estudio-lumen', title: 'Estrategia y enfoque inicial', completed: true, scheduleLabel: '', sortOrder: 1 },
+          { id: 'sub-lumen-2', ownerId, taskId: 'task-estudio-lumen', title: 'Logotipo y retícula base', completed: true, scheduleLabel: '', sortOrder: 2 },
+          { id: 'sub-lumen-3', ownerId, taskId: 'task-estudio-lumen', title: 'Sistema visual y tipografía', completed: true, scheduleLabel: '', sortOrder: 3 },
+          { id: 'sub-lumen-4', ownerId, taskId: 'task-estudio-lumen', title: 'Aplicaciones y presentación', completed: false, scheduleLabel: 'En curso', sortOrder: 4 },
+          { id: 'sub-lumen-5', ownerId, taskId: 'task-estudio-lumen', title: 'Manual de marca y entrega final', completed: false, scheduleLabel: 'Mañana', sortOrder: 5 },
+          { id: 'sub-est-1', ownerId, taskId: 'task-examen-mercantil', title: 'Resumir formulario de distribuciones', completed: true, scheduleLabel: '', sortOrder: 1 },
+          { id: 'sub-est-2', ownerId, taskId: 'task-examen-mercantil', title: 'Resolver 15 problemas de contraste de hipótesis', completed: true, scheduleLabel: '', sortOrder: 2 },
+          { id: 'sub-est-3', ownerId, taskId: 'task-examen-mercantil', title: 'Simulacro con examen del año pasado', completed: false, scheduleLabel: 'En curso', sortOrder: 3 },
+          { id: 'sub-est-4', ownerId, taskId: 'task-examen-mercantil', title: 'Repaso final de errores frecuentes', completed: false, scheduleLabel: 'Mañana', sortOrder: 4 },
+          { id: 'sub-inf-1', ownerId, taskId: 'task-memoria-tfg', title: 'Definir objetivos y alcance del trabajo', completed: true, scheduleLabel: '', sortOrder: 1 },
+          { id: 'sub-inf-2', ownerId, taskId: 'task-memoria-tfg', title: 'Diagramas de componentes y flujo de datos', completed: false, scheduleLabel: 'Hoy', sortOrder: 2 },
+          { id: 'sub-inf-3', ownerId, taskId: 'task-memoria-tfg', title: 'Redacción de pruebas y conclusiones', completed: false, scheduleLabel: 'Mañana', sortOrder: 3 },
+          { id: 'sub-inf-4', ownerId, taskId: 'task-memoria-tfg', title: 'Exportar PDF y subir al campus', completed: false, scheduleLabel: '', sortOrder: 4 },
+          { id: 'sub-alg-1', ownerId, taskId: 'task-examen-algoritmos', title: 'Complejidad asintótica y recurrencias', completed: true, scheduleLabel: '', sortOrder: 1 },
+          { id: 'sub-alg-2', ownerId, taskId: 'task-examen-algoritmos', title: 'Árboles equilibrados y grafos (Dijkstra / BFS)', completed: false, scheduleLabel: 'En curso', sortOrder: 2 },
+          { id: 'sub-alg-3', ownerId, taskId: 'task-examen-algoritmos', title: 'Programación dinámica y voraces', completed: false, scheduleLabel: 'Mañana', sortOrder: 3 },
+          { id: 'sub-alg-4', ownerId, taskId: 'task-examen-algoritmos', title: 'Practicar ejercicios en papel sin IDE', completed: false, scheduleLabel: '', sortOrder: 4 },
+          { id: 'sub-dia-1', ownerId, taskId: 'task-rutina-diaria', title: 'Planificar bloque de estudio de la mañana', completed: true, scheduleLabel: '', sortOrder: 1 },
+          { id: 'sub-dia-2', ownerId, taskId: 'task-rutina-diaria', title: 'Compra semanal y preparar comidas', completed: true, scheduleLabel: '', sortOrder: 2 },
+          { id: 'sub-dia-3', ownerId, taskId: 'task-rutina-diaria', title: 'Entrenamiento de fuerza (45 min)', completed: true, scheduleLabel: '', sortOrder: 3 },
+          { id: 'sub-dia-4', ownerId, taskId: 'task-rutina-diaria', title: 'Lectura de 20 páginas antes de dormir', completed: false, scheduleLabel: 'Hoy', sortOrder: 4 },
+          { id: 'sub-term-1', ownerId, taskId: 'task-rebranding-bodega', title: 'Investigación de referencias', completed: true, scheduleLabel: '', sortOrder: 1 },
+          { id: 'sub-term-2', ownerId, taskId: 'task-rebranding-bodega', title: 'Diseño de diapositivas', completed: true, scheduleLabel: '', sortOrder: 2 },
+          { id: 'sub-term-3', ownerId, taskId: 'task-rebranding-bodega', title: 'Exposición en clase', completed: true, scheduleLabel: '', sortOrder: 3 },
+          { id: 'sub-gest-1', ownerId, taskId: 'task-gestiones-mes', title: 'Descargar certificados académicos', completed: true, scheduleLabel: '', sortOrder: 1 },
+          { id: 'sub-gest-2', ownerId, taskId: 'task-gestiones-mes', title: 'Adjuntar resguardo bancario', completed: true, scheduleLabel: '', sortOrder: 2 },
+          { id: 'sub-gest-3', ownerId, taskId: 'task-gestiones-mes', title: 'Confirmar registro electrónico', completed: true, scheduleLabel: '', sortOrder: 3 },
+        ];
+
+        return { tasks, subtasks };
+      }
+
+      function App() {
+        const [todayIso, setTodayIso] = useState(() => getTodayIsoString());
+        const searchInputRef = useRef(null);
+        const fileInputRef = useRef(null);
+
+        const [tasks, setTasks] = useState(() => {
+          try {
+            const saved = localStorage.getItem(LOCAL_STORAGE_TASKS_KEY);
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            }
+          } catch {}
+          return getInitialSeedData(getTodayIsoString()).tasks;
+        });
+
+        const [subtasks, setSubtasks] = useState(() => {
+          try {
+            const saved = localStorage.getItem(LOCAL_STORAGE_SUBTASKS_KEY);
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            }
+          } catch {}
+          return getInitialSeedData(getTodayIsoString()).subtasks;
+        });
+
+        const [activeFilter, setActiveFilter] = useState('todo');
+        const [searchQuery, setSearchQuery] = useState('');
+        const [viewMode, setViewMode] = useState('tablero');
+        const [sortBy, setSortBy] = useState('fecha');
+        const [selectedTaskId, setSelectedTaskId] = useState('task-estudio-lumen');
+        const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+        const [mobileStatusTab, setMobileStatusTab] = useState('todos');
+
+        // Modals
+        const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+        const [editingTask, setEditingTask] = useState(null);
+        const [modalDefaultStatus, setModalDefaultStatus] = useState('pendiente');
+        const [modalDefaultDueDate, setModalDefaultDueDate] = useState('');
+        const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
+
+        // Inspector local state
+        const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+        const [newSubtaskSchedule, setNewSubtaskSchedule] = useState('En curso');
+        const [isEditingDate, setIsEditingDate] = useState(false);
+        const [confirmDelete, setConfirmDelete] = useState(false);
+        const [editingSubtaskId, setEditingSubtaskId] = useState(null);
+        const [editingSubtaskText, setEditingSubtaskText] = useState('');
+
+        // Drag & Drop state (Mouse + Touch for Tablet & Mobile)
+        const [draggedTaskId, setDraggedTaskId] = useState(null);
+        const [dragOverColumn, setDragOverColumn] = useState(null);
+        const [touchDragGhost, setTouchDragGhost] = useState(null);
+
+        const longPressTimerRef = useRef(null);
+        const touchStartPosRef = useRef(null);
+        const activeTouchTaskRef = useRef(null);
+        const dragOverColumnRef = useRef(null);
+
+        const clearLongPressTimer = () => {
+          if (longPressTimerRef.current !== null) {
+            window.clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+          }
+        };
+
+        const beginTouchDrag = (task, clientX, clientY) => {
+          clearLongPressTimer();
+          activeTouchTaskRef.current = { id: task.id, title: task.title };
+          setDraggedTaskId(task.id);
+          setTouchDragGhost({
+            taskId: task.id,
+            title: task.title,
+            x: clientX,
+            y: clientY,
+          });
+          if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            try {
+              navigator.vibrate(15);
+            } catch {}
+          }
+        };
+
+        // Calendar state
+        const [calYear, setCalYear] = useState(() => Number(todayIso.split('-')[0]));
+        const [calMonth, setCalMonth] = useState(() => Number(todayIso.split('-')[1]) - 1);
+        const [selectedCalDate, setSelectedCalDate] = useState(todayIso);
+
+        // Cloud Account Sync state (PC, Mobile & Tablet in Real Time)
+        const [cloudAccount, setCloudAccount] = useState(() => {
+          try {
+            const saved = localStorage.getItem(CLOUD_ACCOUNT_STORAGE_KEY);
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (parsed && parsed.identifier && parsed.topicId) return parsed;
+            }
+          } catch {}
+          return null;
+        });
+        const [isCloudConnected, setIsCloudConnected] = useState(false);
+        const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+        const [accountInput, setAccountInput] = useState('');
+        const [passwordInput, setPasswordInput] = useState('');
+        const [accountFormError, setAccountFormError] = useState('');
+
+        const deviceIdRef = useRef(makeSafeId('dev'));
+        const lastSyncIdRef = useRef(
+          (() => {
+            try {
+              return localStorage.getItem(CLOUD_LAST_SYNC_ID_KEY) || '';
+            } catch {
+              return '';
+            }
+          })()
+        );
+        const isApplyingRemoteRef = useRef(false);
+        const hasCompletedInitialPullRef = useRef(false);
+        const localTasksRef = useRef(tasks);
+        const localSubtasksRef = useRef(subtasks);
+
+        useEffect(() => {
+          localTasksRef.current = tasks;
+          localSubtasksRef.current = subtasks;
+        }, [tasks, subtasks]);
+
+        const pushCurrentStateToCloud = async (account) => {
+          if (!account) return;
+          const syncId = makeSafeId('sync');
+          lastSyncIdRef.current = syncId;
+          try {
+            localStorage.setItem(CLOUD_LAST_SYNC_ID_KEY, syncId);
+          } catch {}
+          setIsSyncingCloud(true);
+          await publishCloudSnapshot(account.topicId, {
+            type: 'state_sync',
+            syncId,
+            deviceId: deviceIdRef.current,
+            accountId: account.identifier,
+            tasks: localTasksRef.current,
+            subtasks: localSubtasksRef.current,
+          });
+          setIsSyncingCloud(false);
+        };
+
+        const pullOrSeedCloudAccount = async (account) => {
+          if (!account) return;
+          setIsSyncingCloud(true);
+          const remote = await fetchLatestCloudSnapshot(account.topicId);
+          if (remote && Array.isArray(remote.tasks) && Array.isArray(remote.subtasks)) {
+            if (remote.syncId !== lastSyncIdRef.current) {
+              isApplyingRemoteRef.current = true;
+              lastSyncIdRef.current = remote.syncId;
+              try {
+                localStorage.setItem(CLOUD_LAST_SYNC_ID_KEY, remote.syncId);
+              } catch {}
+              setTasks(remote.tasks);
+              setSubtasks(remote.subtasks);
+              window.setTimeout(() => {
+                isApplyingRemoteRef.current = false;
+              }, 80);
+            }
+            hasCompletedInitialPullRef.current = true;
+            setIsSyncingCloud(false);
+          } else {
+            hasCompletedInitialPullRef.current = true;
+            await pushCurrentStateToCloud(account);
+          }
+        };
+
+        useEffect(() => {
+          if (!cloudAccount) return;
+          hasCompletedInitialPullRef.current = false;
+          pullOrSeedCloudAccount(cloudAccount);
+
+          const unsubscribe = subscribeToCloudTopic(
+            cloudAccount.topicId,
+            (payload) => {
+              if (payload.type === 'request_sync' && payload.deviceId !== deviceIdRef.current) {
+                pushCurrentStateToCloud(cloudAccount);
+                return;
+              }
+              if (
+                payload.type === 'state_sync' &&
+                payload.deviceId !== deviceIdRef.current &&
+                payload.syncId !== lastSyncIdRef.current
+              ) {
+                isApplyingRemoteRef.current = true;
+                lastSyncIdRef.current = payload.syncId;
+                try {
+                  localStorage.setItem(CLOUD_LAST_SYNC_ID_KEY, payload.syncId);
+                } catch {}
+                setTasks(payload.tasks);
+                setSubtasks(payload.subtasks);
+                window.setTimeout(() => {
+                  isApplyingRemoteRef.current = false;
+                }, 80);
+              }
+            },
+            (connected) => setIsCloudConnected(connected)
+          );
+
+          const onFocus = () => pullOrSeedCloudAccount(cloudAccount);
+          window.addEventListener('focus', onFocus);
+          return () => {
+            unsubscribe();
+            window.removeEventListener('focus', onFocus);
+          };
+        }, [cloudAccount]);
+
+        useEffect(() => {
+          if (!cloudAccount) return;
+          if (!hasCompletedInitialPullRef.current || isApplyingRemoteRef.current) return;
+          const timer = window.setTimeout(() => {
+            pushCurrentStateToCloud(cloudAccount);
+          }, 350);
+          return () => window.clearTimeout(timer);
+        }, [tasks, subtasks, cloudAccount]);
+
+        const handleConnectCloudAccount = async (e) => {
+          e.preventDefault();
+          if (accountInput.trim().length < 2) {
+            setAccountFormError('Introduce un usuario o correo (mínimo 2 caracteres).');
+            return;
+          }
+          if (passwordInput.trim().length < 4) {
+            setAccountFormError('Introduce una contraseña o PIN (mínimo 4 caracteres).');
+            return;
+          }
+          setAccountFormError('');
+          const topicId = deriveAccountTopicId(accountInput.trim(), passwordInput.trim());
+          const nextAccount = { identifier: accountInput.trim(), topicId };
+          try {
+            localStorage.setItem(CLOUD_ACCOUNT_STORAGE_KEY, JSON.stringify(nextAccount));
+          } catch {}
+          setCloudAccount(nextAccount);
+          setPasswordInput('');
+        };
+
+        const handleDisconnectCloudAccount = () => {
+          try {
+            localStorage.removeItem(CLOUD_ACCOUNT_STORAGE_KEY);
+          } catch {}
+          setCloudAccount(null);
+          setIsCloudConnected(false);
+        };
+
+        // Persist to localStorage
+        useEffect(() => {
+          try {
+            localStorage.setItem(LOCAL_STORAGE_TASKS_KEY, JSON.stringify(tasks));
+            localStorage.setItem(LOCAL_STORAGE_SUBTASKS_KEY, JSON.stringify(subtasks));
+          } catch {}
+        }, [tasks, subtasks]);
+
+        useEffect(() => {
+          if (tasks.length === 0) {
+            setSelectedTaskId(null);
+            return;
+          }
+          if (!selectedTaskId || !tasks.some((t) => t.id === selectedTaskId)) {
+            setSelectedTaskId(tasks[0].id);
+          }
+        }, [tasks, selectedTaskId]);
+
+        useEffect(() => {
+          setConfirmDelete(false);
+          setEditingSubtaskId(null);
+          setIsEditingDate(false);
+        }, [selectedTaskId]);
+
+        // Keyboard shortcuts
+        useEffect(() => {
+          const onKey = (e) => {
+            const tag = e.target?.tagName;
+            const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+            if (e.key === 'Escape') {
+              setIsTaskModalOpen(false);
+              setIsBackupModalOpen(false);
+              setIsMobileDrawerOpen(false);
+              return;
+            }
+            if (isInput) return;
+            if (e.key === '/' || (e.ctrlKey && e.key.toLowerCase() === 'k')) {
+              e.preventDefault();
+              searchInputRef.current?.focus();
+            } else if (e.key.toLowerCase() === 'n' && !e.ctrlKey && !e.metaKey) {
+              e.preventDefault();
+              openNewTaskModal('pendiente', todayIso);
+            }
+          };
+          window.addEventListener('keydown', onKey);
+          return () => window.removeEventListener('keydown', onKey);
+        }, [todayIso]);
+
+        const filteredTasks = useMemo(() => {
+          const q = searchQuery.trim().toLowerCase();
+          const list = tasks.filter((t) => {
+            if (activeFilter === 'trabajo' && t.category !== 'trabajo') return false;
+            if (activeFilter === 'examen' && t.category !== 'examen') return false;
+            if (activeFilter === 'diario' && t.category !== 'diario') return false;
+            if (activeFilter === 'entregas' && t.status === 'terminado') return false;
+            if (q && !`${t.title} ${t.subtitle} ${t.tag} ${t.category}`.toLowerCase().includes(q)) return false;
+            return true;
+          });
+          return [...list].sort((a, b) => {
+            if (sortBy === 'progreso' && b.progress !== a.progress) return b.progress - a.progress;
+            if (sortBy === 'titulo') {
+              const c = a.title.localeCompare(b.title, 'es');
+              if (c !== 0) return c;
+            }
+            if (a.dueDate !== b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+            return a.title.localeCompare(b.title, 'es');
+          });
+        }, [tasks, activeFilter, searchQuery, sortBy]);
+
+        const selectedTask = useMemo(
+          () => tasks.find((t) => t.id === selectedTaskId) || null,
+          [tasks, selectedTaskId]
+        );
+
+        const selectedTaskSubtasks = useMemo(
+          () => subtasks.filter((s) => s.taskId === selectedTaskId).sort((a, b) => a.sortOrder - b.sortOrder),
+          [subtasks, selectedTaskId]
+        );
+
+        const counts = useMemo(() => ({
+          todo: tasks.length,
+          trabajo: tasks.filter((t) => t.category === 'trabajo').length,
+          examen: tasks.filter((t) => t.category === 'examen').length,
+          diario: tasks.filter((t) => t.category === 'diario').length,
+          entregas: tasks.filter((t) => t.status !== 'terminado').length,
+        }), [tasks]);
+
+        const monthlySummary = useMemo(() => {
+          const completedCount = tasks.filter((t) => t.status === 'terminado').length;
+          const inProgressCount = tasks.filter((t) => t.status === 'en_marcha').length;
+          const pendingCount = tasks.filter((t) => t.status === 'pendiente').length;
+          const averageProgress = tasks.length === 0
+            ? 0
+            : Math.round(tasks.reduce((acc, t) => acc + t.progress, 0) / tasks.length);
+          return { completedCount, inProgressCount, pendingCount, averageProgress };
+        }, [tasks]);
+
+        const weeklyDeliveriesCount = useMemo(() => {
+          return tasks.filter((t) => {
+            if (t.status === 'terminado') return false;
+            const info = formatSpanishDate(t.dueDate, todayIso);
+            return info.isThisWeek || info.isOverdue;
+          }).length;
+        }, [tasks, todayIso]);
+
+        const priorityToday = useMemo(() => {
+          const active = tasks.filter((t) => t.status !== 'terminado');
+          if (active.length === 0) return null;
+          const sorted = [...active].sort((a, b) => {
+            const aT = a.dueDate === todayIso ? 0 : 1;
+            const bT = b.dueDate === todayIso ? 0 : 1;
+            if (aT !== bT) return aT - bT;
+            return a.dueDate.localeCompare(b.dueDate);
+          });
+          const chosen = sorted[0];
+          const subs = subtasks.filter((s) => s.taskId === chosen.id);
+          const remainingSubtasks = subs.length > 0
+            ? subs.filter((s) => !s.completed).length
+            : Math.max(1, chosen.totalSubtasks - chosen.completedSubtasks);
+          return { task: chosen, remainingSubtasks, isToday: chosen.dueDate <= todayIso };
+        }, [tasks, subtasks, todayIso]);
+
+        const calendarCells = useMemo(
+          () => getCalendarMonthDays(calYear, calMonth, todayIso),
+          [calYear, calMonth, todayIso]
+        );
+
+        const tasksByDate = useMemo(() => {
+          const map = {};
+          for (const t of filteredTasks) {
+            if (!map[t.dueDate]) map[t.dueDate] = [];
+            map[t.dueDate].push(t);
+          }
+          return map;
+        }, [filteredTasks]);
+
+        // Actions
+        const handleSelectTask = (taskId) => {
+          setSelectedTaskId(taskId);
+          setIsMobileDrawerOpen(true);
+        };
+
+        const handleStatusChange = (taskId, newStatus) => {
+          setTasks((prev) =>
+            prev.map((t) => {
+              if (t.id !== taskId) return t;
+              const taskSubs = subtasks.filter((s) => s.taskId === taskId);
+              const { progress, totalSubtasks, completedSubtasks } =
+                newStatus === 'terminado' && taskSubs.length === 0
+                  ? { progress: 100, totalSubtasks: 0, completedSubtasks: 0 }
+                  : calculateTaskProgress(taskSubs, newStatus);
+              return {
+                ...t,
+                status: newStatus,
+                progress,
+                totalSubtasks,
+                completedSubtasks,
+                tag: newStatus === 'terminado' ? 'Completado' : t.tag,
+              };
+            })
+          );
+        };
+
+        useEffect(() => {
+          const handleGlobalTouchMove = (e) => {
+            if (!activeTouchTaskRef.current) {
+              if (longPressTimerRef.current !== null && touchStartPosRef.current && e.touches[0]) {
+                const dx = Math.abs(e.touches[0].clientX - touchStartPosRef.current.x);
+                const dy = Math.abs(e.touches[0].clientY - touchStartPosRef.current.y);
+                if (dx > 10 || dy > 10) {
+                  clearLongPressTimer();
+                }
+              }
+              return;
+            }
+            const touch = e.touches[0];
+            if (!touch) return;
+            if (e.cancelable) e.preventDefault();
+
+            setTouchDragGhost({
+              taskId: activeTouchTaskRef.current.id,
+              title: activeTouchTaskRef.current.title,
+              x: touch.clientX,
+              y: touch.clientY,
+            });
+
+            const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
+            const dropZone = targetEl?.closest('[data-drop-status]');
+            const status = dropZone?.getAttribute('data-drop-status') || null;
+
+            if (dragOverColumnRef.current !== status) {
+              dragOverColumnRef.current = status;
+              setDragOverColumn(status);
+            }
+          };
+
+          const finishTouchDrag = () => {
+            clearLongPressTimer();
+            if (activeTouchTaskRef.current) {
+              const taskId = activeTouchTaskRef.current.id;
+              const targetStatus = dragOverColumnRef.current;
+              if (targetStatus) {
+                handleStatusChange(taskId, targetStatus);
+              }
+            }
+            activeTouchTaskRef.current = null;
+            dragOverColumnRef.current = null;
+            touchStartPosRef.current = null;
+            setDraggedTaskId(null);
+            setDragOverColumn(null);
+            setTouchDragGhost(null);
+          };
+
+          window.addEventListener('touchmove', handleGlobalTouchMove, { passive: false });
+          window.addEventListener('touchend', finishTouchDrag);
+          window.addEventListener('touchcancel', finishTouchDrag);
+
+          return () => {
+            window.removeEventListener('touchmove', handleGlobalTouchMove);
+            window.removeEventListener('touchend', finishTouchDrag);
+            window.removeEventListener('touchcancel', finishTouchDrag);
+          };
+        }, [subtasks]);
+
+        const handleDateChange = (taskId, newDueDate) => {
+          setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, dueDate: newDueDate } : t)));
+        };
+
+        const handleToggleSubtask = (subtaskId) => {
+          const targetSub = subtasks.find((s) => s.id === subtaskId);
+          if (!targetSub) return;
+          const parentTask = tasks.find((t) => t.id === targetSub.taskId);
+          if (!parentTask) return;
+
+          const nextCompleted = !targetSub.completed;
+          const updatedSubs = subtasks
+            .filter((s) => s.taskId === parentTask.id)
+            .map((s) => (s.id === subtaskId ? { ...s, completed: nextCompleted } : s));
+
+          const { progress, totalSubtasks, completedSubtasks } = calculateTaskProgress(updatedSubs, parentTask.status);
+          const nextStatus =
+            totalSubtasks > 0 && completedSubtasks === totalSubtasks
+              ? 'terminado'
+              : parentTask.status === 'terminado' && completedSubtasks < totalSubtasks
+              ? 'en_marcha'
+              : parentTask.status;
+
+          setSubtasks((prev) =>
+            prev.map((s) =>
+              s.id === subtaskId
+                ? { ...s, completed: nextCompleted, scheduleLabel: nextCompleted ? '' : s.scheduleLabel }
+                : s
+            )
+          );
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === parentTask.id
+                ? { ...t, status: nextStatus, progress, totalSubtasks, completedSubtasks }
+                : t
+            )
+          );
+        };
+
+        const handleCycleSubtaskLabel = (subtaskId, nextLabel) => {
+          setSubtasks((prev) => prev.map((s) => (s.id === subtaskId ? { ...s, scheduleLabel: nextLabel } : s)));
+        };
+
+        const handleEditSubtaskTitle = (subtaskId, newTitle) => {
+          const trimmed = newTitle.trim();
+          if (!trimmed) return;
+          setSubtasks((prev) => prev.map((s) => (s.id === subtaskId ? { ...s, title: trimmed } : s)));
+          setEditingSubtaskId(null);
+        };
+
+        const handleAddSubtask = (e) => {
+          e.preventDefault();
+          if (!selectedTask) return;
+          const trimmed = newSubtaskTitle.trim();
+          if (!trimmed) return;
+          const existing = subtasks.filter((s) => s.taskId === selectedTask.id);
+          const newSub = {
+            id: makeSafeId('sub'),
+            ownerId: 'demo-user',
+            taskId: selectedTask.id,
+            title: trimmed,
+            completed: false,
+            scheduleLabel: newSubtaskSchedule,
+            sortOrder: existing.length + 1,
+          };
+          const nextSubs = [...existing, newSub];
+          const { progress, totalSubtasks, completedSubtasks } = calculateTaskProgress(nextSubs, selectedTask.status);
+          setSubtasks((prev) => [...prev, newSub]);
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === selectedTask.id ? { ...t, progress, totalSubtasks, completedSubtasks } : t
+            )
+          );
+          setNewSubtaskTitle('');
+        };
+
+        const handleDeleteSubtask = (subtaskId) => {
+          const targetSub = subtasks.find((s) => s.id === subtaskId);
+          if (!targetSub) return;
+          const remaining = subtasks.filter((s) => s.taskId === targetSub.taskId && s.id !== subtaskId);
+          const parent = tasks.find((t) => t.id === targetSub.taskId);
+          if (!parent) return;
+          const { progress, totalSubtasks, completedSubtasks } = calculateTaskProgress(remaining, parent.status);
+          setSubtasks((prev) => prev.filter((s) => s.id !== subtaskId));
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === parent.id ? { ...t, progress, totalSubtasks, completedSubtasks } : t
+            )
+          );
+        };
+
+        const handleDeleteTask = (taskId) => {
+          setSubtasks((prev) => prev.filter((s) => s.taskId !== taskId));
+          setTasks((prev) => prev.filter((t) => t.id !== taskId));
+          setIsMobileDrawerOpen(false);
+        };
+
+        const openNewTaskModal = (status = 'pendiente', dueDate = todayIso) => {
+          setEditingTask(null);
+          setModalDefaultStatus(status);
+          setModalDefaultDueDate(dueDate || todayIso);
+          setIsTaskModalOpen(true);
+        };
+
+        const handleExportBackup = () => {
+          const blob = new Blob(
+            [JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), tasks, subtasks }, null, 2)],
+            { type: 'application/json' }
+          );
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `enfoque-neojira-backup-${todayIso}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+        };
+
+        const handleImportBackup = async (file) => {
+          try {
+            const text = await file.text();
+            const parsed = JSON.parse(text);
+            if (Array.isArray(parsed.tasks) && Array.isArray(parsed.subtasks)) {
+              setTasks(parsed.tasks);
+              setSubtasks(parsed.subtasks);
+              setIsBackupModalOpen(false);
+            }
+          } catch {}
+        };
+
+        const handleResetDemo = () => {
+          const seed = getInitialSeedData(todayIso);
+          setTasks(seed.tasks);
+          setSubtasks(seed.subtasks);
+          setIsBackupModalOpen(false);
+        };
+
+        const navItems = [
+          { id: 'todo', label: 'Proyectos y Todo', shortLabel: 'Todo', count: counts.todo, icon: LayoutGrid },
+          { id: 'trabajo', label: 'Trabajos', shortLabel: 'Trabajos', count: counts.trabajo, icon: Briefcase },
+          { id: 'examen', label: 'Exámenes', shortLabel: 'Exámenes', count: counts.examen, icon: BookOpen },
+          { id: 'diario', label: 'Día a día', shortLabel: 'Día a día', count: counts.diario, icon: SunMedium },
+          { id: 'entregas', label: 'Entregas', shortLabel: 'Entregas', count: counts.entregas, icon: CalendarClock },
+        ];
+
+        const sectionHeading =
+          activeFilter === 'todo' ? 'Proyectos'
+          : activeFilter === 'trabajo' ? 'Trabajos'
+          : activeFilter === 'examen' ? 'Exámenes'
+          : activeFilter === 'diario' ? 'Día a Día'
+          : 'Entregas';
+
+        const renderInspectorContent = () => {
+          if (!selectedTask) {
+            return html`
+              <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
+                <p className="text-sm font-semibold text-white">Selecciona una tarea</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Toca cualquier tarjeta del tablero o calendario para ver su progreso y subtareas.
+                </p>
+              </div>
+            `;
+          }
+          const dateInfo = formatSpanishDate(selectedTask.dueDate, todayIso);
+
+          return html`
+            <div className="space-y-4">
+              <div className="rounded-2xl bg-[#FF6B4A] text-[#0B0E14] p-5 shadow-lg space-y-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold opacity-80 truncate">
+                      ${selectedTask.subtitle} · ${CATEGORY_LABELS[selectedTask.category]}
+                    </p>
+                    <h2 className="text-xl font-extrabold font-display tracking-tight leading-snug mt-0.5">
+                      ${selectedTask.title}
+                    </h2>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick=${() => {
+                        setEditingTask(selectedTask);
+                        setIsTaskModalOpen(true);
+                      }}
+                      className="p-2 rounded-xl bg-black/10 hover:bg-black/20 text-[#0B0E14] cursor-pointer"
+                    >
+                      <${Edit3} className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick=${() => setConfirmDelete((v) => !v)}
+                      className="p-2 rounded-xl bg-black/10 hover:bg-black/20 text-[#0B0E14] cursor-pointer"
+                    >
+                      <${Trash2} className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick=${() => setIsMobileDrawerOpen(false)}
+                      className="lg:hidden p-2 rounded-xl bg-black/10 hover:bg-black/20 text-[#0B0E14] cursor-pointer"
+                    >
+                      <${X} className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                ${confirmDelete && html`
+                  <div className="rounded-xl bg-[#0B0E14]/95 text-white p-3 flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium">¿Eliminar esta tarea?</span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick=${() => setConfirmDelete(false)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 text-[11px] text-slate-200 cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick=${() => handleDeleteTask(selectedTask.id)}
+                        className="px-2.5 py-1 rounded-lg bg-rose-500 text-[11px] font-bold text-[#0B0E14] cursor-pointer"
+                      >
+                        Sí, borrar
+                      </button>
+                    </div>
+                  </div>
+                `}
+
+                <div className="flex items-end justify-between pt-1">
+                  <div>
+                    <p className="text-[11px] font-semibold opacity-75">Progreso</p>
+                    <p className="text-2xl font-extrabold font-mono-num tracking-tight mt-0.5">
+                      ${selectedTask.progress} %
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[11px] font-semibold opacity-75">Subtareas</p>
+                    <p className="text-lg font-extrabold font-mono-num tracking-tight mt-0.5">
+                      ${selectedTask.completedSubtasks}/${selectedTask.totalSubtasks}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="w-full h-2 rounded-full bg-black/20 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-[#0B0E14] transition-all duration-200"
+                    style=${{ width: `${Math.max(5, selectedTask.progress)}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-[#131822] border border-[#1F2737] p-4 space-y-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs text-slate-400">Entrega / Fecha clave</p>
+                    <p className="text-base font-bold text-white font-display mt-0.5">
+                      ${dateInfo.fullDate}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick=${() => setIsEditingDate((v) => !v)}
+                    className="px-3 py-1.5 rounded-xl bg-[#1B2333] hover:bg-[#242F44] text-xs font-medium text-slate-200 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <${CalendarIcon} className="w-3.5 h-3.5 text-[#FF6B4A]" />
+                    <span>${dateInfo.shortLabel}</span>
+                  </button>
+                </div>
+
+                ${isEditingDate && html`
+                  <div className="pt-1 space-y-2">
+                    <div className="grid grid-cols-4 gap-1.5">
+                      ${[
+                        { label: 'Hoy', iso: todayIso },
+                        { label: 'Mañana', iso: addDaysIso(todayIso, 1) },
+                        { label: '+3 días', iso: addDaysIso(todayIso, 3) },
+                        { label: '+1 sem', iso: addDaysIso(todayIso, 7) },
+                      ].map((p) => html`
+                        <button
+                          key=${p.label}
+                          type="button"
+                          onClick=${() => {
+                            handleDateChange(selectedTask.id, p.iso);
+                            setIsEditingDate(false);
+                          }}
+                          className="py-1.5 px-2 rounded-lg text-[11px] font-medium bg-[#0B0E14] border border-[#242F46] text-slate-300 hover:text-white cursor-pointer"
+                        >
+                          ${p.label}
+                        </button>
+                      `)}
+                    </div>
+                    <input
+                      type="date"
+                      value=${selectedTask.dueDate}
+                      onChange=${(e) => {
+                        if (e.target.value) {
+                          handleDateChange(selectedTask.id, e.target.value);
+                          setIsEditingDate(false);
+                        }
+                      }}
+                      className="w-full px-3 py-2 rounded-xl bg-[#0B0E14] border border-[#2A364F] text-xs text-white"
+                    />
+                  </div>
+                `}
+
+                <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-[#0B0E14] border border-[#1E2638]">
+                  ${['pendiente', 'en_marcha', 'terminado'].map((st) => html`
+                    <button
+                      key=${st}
+                      type="button"
+                      onClick=${() => handleStatusChange(selectedTask.id, st)}
+                      className=${`py-1.5 px-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                        selectedTask.status === st
+                          ? 'bg-[#222C40] text-white font-semibold'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      ${STATUS_LABELS[st]}
+                    </button>
+                  `)}
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-[#131822] border border-[#1F2737] p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold text-slate-300">
+                    Pasos y subtareas (${selectedTask.completedSubtasks}/${selectedTask.totalSubtasks})
+                  </h3>
+                  <span className="text-[11px] text-slate-500">Toca para completar</span>
+                </div>
+
+                <ul className="divide-y divide-[#1E2638]">
+                  ${selectedTaskSubtasks.map((sub) => html`
+                    <li key=${sub.id} className="py-2.5 flex items-center justify-between gap-2 group">
+                      ${editingSubtaskId === sub.id ? html`
+                        <div className="flex items-center gap-1.5 flex-1">
+                          <input
+                            type="text"
+                            value=${editingSubtaskText}
+                            onChange=${(e) => setEditingSubtaskText(e.target.value)}
+                            onKeyDown=${(e) => {
+                              if (e.key === 'Enter') handleEditSubtaskTitle(sub.id, editingSubtaskText);
+                              if (e.key === 'Escape') setEditingSubtaskId(null);
+                            }}
+                            autoFocus
+                            className="flex-1 px-2.5 py-1.5 rounded-lg bg-[#0B0E14] border border-[#FF6B4A] text-xs text-white"
+                          />
+                          <button
+                            type="button"
+                            onClick=${() => handleEditSubtaskTitle(sub.id, editingSubtaskText)}
+                            className="px-2.5 py-1.5 rounded-lg bg-[#FF6B4A] text-[#0B0E14] text-[11px] font-bold cursor-pointer"
+                          >
+                            OK
+                          </button>
+                        </div>
+                      ` : html`
+                        <button
+                          type="button"
+                          onClick=${() => handleToggleSubtask(sub.id)}
+                          className="flex items-center gap-3 text-left flex-1 min-w-0 py-1 cursor-pointer"
+                        >
+                          <span className=${`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
+                            sub.completed ? 'bg-white text-[#0B0E14]' : 'border-2 border-slate-600'
+                          }`}>
+                            ${sub.completed && html`<${Check} className="w-3.5 h-3.5 stroke-[3]" />`}
+                          </span>
+                          <span className=${`text-xs leading-snug ${
+                            sub.completed ? 'line-through text-slate-500' : 'text-slate-100 font-medium'
+                          }`}>
+                            ${sub.title}
+                          </span>
+                        </button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          ${!sub.completed && html`
+                            <button
+                              type="button"
+                              onClick=${() => handleCycleSubtaskLabel(sub.id, cycleScheduleLabel(sub.scheduleLabel))}
+                              className=${`px-2 py-1 rounded-lg text-[11px] font-medium cursor-pointer ${
+                                sub.scheduleLabel === 'En curso' || sub.scheduleLabel === 'Hoy'
+                                  ? 'bg-[#FF6B4A]/20 text-[#FF6B4A]'
+                                  : sub.scheduleLabel === 'Mañana'
+                                  ? 'bg-amber-500/15 text-amber-300'
+                                  : 'bg-[#1B2333] text-slate-400'
+                              }`}
+                            >
+                              ${sub.scheduleLabel || '+ Cuándo'}
+                            </button>
+                          `}
+                          <button
+                            type="button"
+                            onClick=${() => {
+                              setEditingSubtaskId(sub.id);
+                              setEditingSubtaskText(sub.title);
+                            }}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 cursor-pointer"
+                          >
+                            <${Pencil} className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick=${() => handleDeleteSubtask(sub.id)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 cursor-pointer"
+                          >
+                            <${X} className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      `}
+                    </li>
+                  `)}
+                </ul>
+
+                <form onSubmit=${handleAddSubtask} className="pt-2 space-y-2 border-t border-[#1E2638]">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value=${newSubtaskTitle}
+                      onChange=${(e) => setNewSubtaskTitle(e.target.value)}
+                      placeholder="Añadir paso, tema o ejercicio..."
+                      className="flex-1 px-3 py-2 rounded-xl bg-[#0B0E14] border border-[#242F46] text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#FF6B4A] min-h-[40px]"
+                    />
+                    <button
+                      type="submit"
+                      className="px-3.5 py-2 rounded-xl bg-[#FF6B4A] hover:bg-[#ff7e62] text-[#0B0E14] font-semibold text-xs flex items-center gap-1 cursor-pointer shrink-0 min-h-[40px]"
+                    >
+                      <${Plus} className="w-4 h-4 stroke-[2.5]" />
+                      <span>Añadir</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          `;
+        };
+
+        return html`
+          <div className="h-screen w-screen overflow-hidden flex bg-[#0B0E14] text-[#F3F4F6]">
+            <!-- Left Sidebar (PC) -->
+            <aside className="hidden lg:flex lg:flex-col w-[264px] shrink-0 bg-[#0F131C] border-r border-[#1E2638] p-5 justify-between select-none">
+              <div className="space-y-6">
+                <div className="flex items-center justify-between px-1">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-[#FF6B4A]/20 border border-[#FF6B4A]/40 flex items-center justify-center text-[#FF6B4A] font-display font-bold text-sm">
+                      E
+                    </div>
+                    <span className="font-display font-bold text-base tracking-tight text-white">
+                      Enfoque
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick=${() => setIsBackupModalOpen(true)}
+                    className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded-lg hover:bg-[#19202E] cursor-pointer"
+                  >
+                    Copia / Sync
+                  </button>
+                </div>
+
+                <nav className="space-y-1">
+                  ${navItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeFilter === item.id;
+                    return html`
+                      <button
+                        key=${item.id}
+                        type="button"
+                        onClick=${() => setActiveFilter(item.id)}
+                        className=${`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors cursor-pointer ${
+                          isActive
+                            ? 'bg-[#1B2333] text-white border border-[#2A364F]'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-[#151B28]'
+                        }`}
+                      >
+                        <span className="flex items-center gap-3 truncate">
+                          <${Icon} className=${`w-4 h-4 shrink-0 ${isActive ? 'text-[#FF6B4A]' : 'text-slate-500'}`} />
+                          <span className="truncate">${item.label}</span>
+                        </span>
+                        <span className=${`font-mono-num text-xs ${isActive ? 'text-[#FF6B4A] font-semibold' : 'text-slate-500'}`}>
+                          ${item.count}
+                        </span>
+                      </button>
+                    `;
+                  })}
+                </nav>
+
+                <div className="pt-4 border-t border-[#1E2638] px-2 space-y-2.5">
+                  <p className="text-xs font-medium text-slate-500">Resumen de progreso</p>
+                  <ul className="space-y-2 text-xs text-slate-300">
+                    <li className="flex items-center justify-between">
+                      <span className="text-slate-400">· Completados</span>
+                      <span className="font-mono-num font-semibold text-emerald-400">${monthlySummary.completedCount}</span>
+                    </li>
+                    <li className="flex items-center justify-between">
+                      <span className="text-slate-400">· En marcha</span>
+                      <span className="font-mono-num font-semibold text-[#FF6B4A]">${monthlySummary.inProgressCount}</span>
+                    </li>
+                    <li className="flex items-center justify-between">
+                      <span className="text-slate-400">· Por entregar</span>
+                      <span className="font-mono-num font-semibold text-slate-200">${monthlySummary.pendingCount + monthlySummary.inProgressCount}</span>
+                    </li>
+                    <li className="flex items-center justify-between">
+                      <span className="text-slate-400">· Avance global</span>
+                      <span className="font-mono-num font-semibold text-white">${monthlySummary.averageProgress} %</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-4">
+                ${priorityToday && html`
+                  <button
+                    type="button"
+                    onClick=${() => handleSelectTask(priorityToday.task.id)}
+                    className="w-full text-left rounded-2xl bg-[#161D2B] border border-[#28344E] hover:border-[#FF6B4A]/60 p-3.5 transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-[#FF6B4A]/20 border border-[#FF6B4A]/40 flex items-center justify-center text-[#FF6B4A] font-display font-bold text-xs shrink-0 mt-0.5">
+                        E
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] text-slate-400 truncate">
+                          ${priorityToday.isToday ? 'Prioridad · hoy' : 'Próxima entrega'}
+                        </p>
+                        <p className="text-xs font-semibold text-white truncate mt-0.5 group-hover:text-[#FF6B4A]">
+                          Entrega: ${priorityToday.task.title}
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-0.5 font-mono-num">
+                          ${priorityToday.remainingSubtasks === 1 ? 'Queda 1 tarea' : `Quedan ${priorityToday.remainingSubtasks} tareas`}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                `}
+
+                <button
+                  type="button"
+                  onClick=${() => setIsBackupModalOpen(true)}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#19202E] border border-[#FF6B4A]/40 hover:border-[#FF6B4A] text-white font-semibold px-3.5 py-2.5 text-xs transition-colors cursor-pointer"
+                >
+                  <${Cloud} className=${`w-4 h-4 ${cloudAccount ? 'text-emerald-400' : 'text-[#FF6B4A]'}`} />
+                  <span className="truncate">
+                    ${cloudAccount ? `Cuenta: ${cloudAccount.identifier}` : 'Conectar Cuenta (Sync)'}
+                  </span>
+                </button>
+              </div>
+            </aside>
+
+            <!-- Mobile / Tablet Bottom Navigation -->
+            <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 h-16 bg-[#0F131C]/95 backdrop-blur-md border-t border-[#1E2638] grid grid-cols-5 items-center px-1">
+              ${navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeFilter === item.id;
+                return html`
+                  <button
+                    key=${item.id}
+                    type="button"
+                    onClick=${() => setActiveFilter(item.id)}
+                    className=${`min-h-[48px] flex flex-col items-center justify-center rounded-xl transition-colors cursor-pointer ${
+                      isActive ? 'text-[#FF6B4A]' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <${Icon} className="w-5 h-5" />
+                    <span className="text-[10px] font-medium mt-1 truncate max-w-[64px]">${item.shortLabel}</span>
+                  </button>
+                `;
+              })}
+            </nav>
+
+            <!-- Main Center Board -->
+            <main className="flex-1 min-w-0 flex h-full overflow-hidden">
+              <section className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#0B0E14]">
+                <header className="px-4 sm:px-6 pt-5 pb-4 border-b border-[#1E2638] space-y-3 shrink-0">
+                  <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-3">
+                    <div className="shrink-0">
+                      <p className="text-xs font-medium text-slate-400 font-mono-num">
+                        ${weeklyDeliveriesCount === 1 ? '1 entrega esta semana' : `${weeklyDeliveriesCount} entregas esta semana`}
+                      </p>
+                      <div className="flex items-center justify-between gap-3 mt-0.5">
+                        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white font-display">
+                          ${sectionHeading}
+                        </h1>
+                        <div className="flex lg:hidden items-center gap-2">
+                          <button
+                            type="button"
+                            onClick=${() => setIsBackupModalOpen(true)}
+                            className="min-h-[42px] px-3 rounded-xl bg-[#151B28] border border-[#FF6B4A]/40 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <${Cloud} className=${`w-4 h-4 ${cloudAccount ? 'text-emerald-400' : 'text-[#FF6B4A]'}`} />
+                            <span className="max-w-[90px] truncate">${cloudAccount ? cloudAccount.identifier : 'Conectar'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick=${() => openNewTaskModal()}
+                            className="min-h-[42px] px-3.5 rounded-xl bg-[#FF6B4A] text-[#0B0E14] font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <${Plus} className="w-4 h-4 stroke-[2.5]" />
+                            <span>Nueva</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                      <div className="relative flex-1 sm:w-44 xl:w-52 min-w-[140px]">
+                        <${Search} className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          ref=${searchInputRef}
+                          type="search"
+                          value=${searchQuery}
+                          onChange=${(e) => setSearchQuery(e.target.value)}
+                          placeholder="Buscar... (/)"
+                          className="w-full pl-8 pr-2.5 py-2 rounded-xl bg-[#131822] border border-[#222B3D] text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#FF6B4A] min-h-[40px]"
+                        />
+                      </div>
+
+                      <select
+                        value=${sortBy}
+                        onChange=${(e) => setSortBy(e.target.value)}
+                        className="px-2.5 py-2 rounded-xl bg-[#131822] border border-[#222B3D] text-xs text-slate-300 focus:outline-none focus:border-[#FF6B4A] min-h-[40px] cursor-pointer shrink-0"
+                      >
+                        <option value="fecha">Orden: Fecha</option>
+                        <option value="progreso">Orden: Progreso</option>
+                        <option value="titulo">Orden: A-Z</option>
+                      </select>
+
+                      <div className="flex items-center p-1 rounded-xl bg-[#131822] border border-[#222B3D] shrink-0">
+                        ${[
+                          { id: 'tablero', label: 'Tablero', icon: LayoutGrid },
+                          { id: 'lista', label: 'Lista', icon: List },
+                          { id: 'calendario', label: 'Calendario', icon: CalendarIcon },
+                        ].map((m) => {
+                          const MIcon = m.icon;
+                          return html`
+                            <button
+                              key=${m.id}
+                              type="button"
+                              onClick=${() => setViewMode(m.id)}
+                              className=${`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                                viewMode === m.id ? 'bg-[#222C40] text-white' : 'text-slate-400 hover:text-slate-200'
+                              }`}
+                            >
+                              <${MIcon} className="w-3.5 h-3.5" />
+                              <span>${m.label}</span>
+                            </button>
+                          `;
+                        })}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick=${() => openNewTaskModal()}
+                        className="hidden lg:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#FF6B4A] hover:bg-[#ff7e62] text-[#0B0E14] font-semibold text-xs transition-colors cursor-pointer shrink-0 min-h-[40px]"
+                      >
+                        <${Plus} className="w-4 h-4 stroke-[2.5]" />
+                        <span>Nueva tarea</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  ${viewMode === 'tablero' && html`
+                    <div className="grid grid-cols-4 md:hidden gap-1.5 pt-0.5">
+                      ${[
+                        { id: 'todos', label: 'Todos', count: filteredTasks.length },
+                        { id: 'pendiente', label: 'Pendiente', count: filteredTasks.filter((t) => t.status === 'pendiente').length },
+                        { id: 'en_marcha', label: 'En marcha', count: filteredTasks.filter((t) => t.status === 'en_marcha').length },
+                        { id: 'terminado', label: 'Terminado', count: filteredTasks.filter((t) => t.status === 'terminado').length },
+                      ].map((tab) => {
+                        const isDropTab = tab.id !== 'todos' && dragOverColumn === tab.id;
+                        return html`
+                          <button
+                            key=${tab.id}
+                            type="button"
+                            data-drop-status=${tab.id !== 'todos' ? tab.id : undefined}
+                            onClick=${() => setMobileStatusTab(tab.id)}
+                            onDragOver=${(e) => {
+                              if (tab.id === 'todos') return;
+                              e.preventDefault();
+                              setDragOverColumn(tab.id);
+                            }}
+                            onDragLeave=${() => {
+                              if (tab.id !== 'todos' && dragOverColumn === tab.id) setDragOverColumn(null);
+                            }}
+                            onDrop=${(e) => {
+                              if (tab.id === 'todos') return;
+                              e.preventDefault();
+                              setDragOverColumn(null);
+                              const taskId = e.dataTransfer?.getData('text/plain') || draggedTaskId;
+                              if (taskId) handleStatusChange(taskId, tab.id);
+                              setDraggedTaskId(null);
+                            }}
+                            className=${`px-2 py-2 rounded-xl text-[11px] font-medium truncate transition-all cursor-pointer min-h-[40px] ${
+                              isDropTab
+                                ? 'bg-[#FF6B4A]/30 text-white ring-2 ring-[#FF6B4A] scale-[1.03]'
+                                : mobileStatusTab === tab.id
+                                ? 'bg-[#FF6B4A] text-[#0B0E14] font-semibold'
+                                : 'bg-[#131822] text-slate-400 border border-[#1E2638]'
+                            }`}
+                          >
+                            ${tab.label} (${tab.count})
+                          </button>
+                        `;
+                      })}
+                    </div>
+                  `}
+                </header>
+
+                <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 pb-24 lg:pb-6">
+                  ${viewMode === 'tablero' ? html`
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
+                      ${[
+                        { status: 'pendiente', title: 'Pendiente' },
+                        { status: 'en_marcha', title: 'En marcha' },
+                        { status: 'terminado', title: 'Terminado' },
+                      ]
+                        .filter((col) => mobileStatusTab === 'todos' || mobileStatusTab === col.status)
+                        .map((col) => {
+                          const colTasks = filteredTasks.filter((t) => t.status === col.status);
+                          const isDrop = dragOverColumn === col.status;
+                          return html`
+                            <div
+                              key=${col.status}
+                              data-drop-status=${col.status}
+                              onDragOver=${(e) => {
+                                e.preventDefault();
+                                if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+                                if (dragOverColumn !== col.status) setDragOverColumn(col.status);
+                              }}
+                              onDragLeave=${(e) => {
+                                if (!e.currentTarget.contains(e.relatedTarget)) {
+                                  if (dragOverColumn === col.status) setDragOverColumn(null);
+                                }
+                              }}
+                              onDrop=${(e) => {
+                                e.preventDefault();
+                                setDragOverColumn(null);
+                                const taskId = e.dataTransfer?.getData('text/plain') || draggedTaskId;
+                                if (taskId) handleStatusChange(taskId, col.status);
+                                setDraggedTaskId(null);
+                              }}
+                              className=${`space-y-3 rounded-2xl p-2.5 -m-1.5 min-h-[220px] transition-all ${
+                                isDrop
+                                  ? 'bg-[#192234]/80 ring-2 ring-[#FF6B4A] shadow-lg shadow-[#FF6B4A]/10'
+                                  : 'bg-transparent'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between px-1">
+                                <div className="flex items-center gap-2">
+                                  <h2 className="text-xs font-semibold text-slate-300">${col.title}</h2>
+                                  ${isDrop && html`
+                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#FF6B4A]/20 text-[#FF6B4A]">
+                                      Soltar aquí
+                                    </span>
+                                  `}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-mono-num text-slate-400">${colTasks.length}</span>
+                                  <button
+                                    type="button"
+                                    onClick=${() => openNewTaskModal(col.status)}
+                                    className="p-1 rounded-lg text-slate-500 hover:text-white hover:bg-[#19202E] cursor-pointer"
+                                  >
+                                    <${Plus} className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="space-y-3">
+                                ${colTasks.map((task) => {
+                                  const isSelected = task.id === selectedTaskId;
+                                  const dateInfo = formatSpanishDate(task.dueDate, todayIso);
+                                  const nextStatus =
+                                    task.status === 'pendiente'
+                                      ? { next: 'en_marcha', label: 'Iniciar' }
+                                      : task.status === 'en_marcha'
+                                      ? { next: 'terminado', label: 'Terminar' }
+                                      : { next: 'en_marcha', label: 'Reabrir' };
+                                  const barColor =
+                                    task.status === 'terminado'
+                                      ? 'bg-emerald-400'
+                                      : dateInfo.isToday || dateInfo.isOverdue
+                                      ? 'bg-[#FF6B4A]'
+                                      : task.category === 'examen'
+                                      ? 'bg-indigo-400'
+                                      : 'bg-sky-400';
+
+                                  return html`
+                                    <div
+                                      key=${task.id}
+                                      draggable="true"
+                                      onDragStart=${(e) => {
+                                        setDraggedTaskId(task.id);
+                                        if (e.dataTransfer) {
+                                          e.dataTransfer.setData('text/plain', task.id);
+                                          e.dataTransfer.effectAllowed = 'move';
+                                        }
+                                      }}
+                                      onDragEnd=${() => {
+                                        setDraggedTaskId(null);
+                                        setDragOverColumn(null);
+                                      }}
+                                      onTouchStart=${(e) => {
+                                        const touch = e.touches[0];
+                                        if (!touch) return;
+                                        touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+                                        clearLongPressTimer();
+                                        longPressTimerRef.current = window.setTimeout(() => {
+                                          beginTouchDrag(task, touch.clientX, touch.clientY);
+                                        }, 220);
+                                      }}
+                                      className=${`rounded-2xl p-4 transition-all border select-none cursor-grab active:cursor-grabbing ${
+                                        isSelected
+                                          ? 'bg-[#171E2E] border-[#FF6B4A] shadow-lg shadow-black/40'
+                                          : 'bg-[#131822] border-[#1F2737] hover:border-[#33415C]'
+                                      } ${draggedTaskId === task.id ? 'opacity-45 scale-[0.97] ring-1 ring-[#FF6B4A]' : ''}`}
+                                    >
+                                      <div
+                                        role="button"
+                                        tabIndex=${0}
+                                        onClick=${() => {
+                                          if (!draggedTaskId) handleSelectTask(task.id);
+                                        }}
+                                        onKeyDown=${(e) => {
+                                          if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            handleSelectTask(task.id);
+                                          }
+                                        }}
+                                        className="w-full text-left space-y-2 cursor-pointer focus:outline-none"
+                                      >
+                                        <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                                          <div className="flex items-center gap-1.5 min-w-0">
+                                            <span
+                                              role="presentation"
+                                              title="Arrastra para mover de columna"
+                                              onTouchStart=${(e) => {
+                                                e.stopPropagation();
+                                                const touch = e.touches[0];
+                                                if (touch) {
+                                                  beginTouchDrag(task, touch.clientX, touch.clientY);
+                                                }
+                                              }}
+                                              className="p-1 -ml-1 rounded-md text-slate-500 hover:text-[#FF6B4A] hover:bg-[#1C2436] touch-none cursor-grab active:cursor-grabbing shrink-0"
+                                            >
+                                              <${GripVertical} className="w-3.5 h-3.5" />
+                                            </span>
+                                            <span className="truncate">${CATEGORY_LABELS[task.category]} · ${task.subtitle}</span>
+                                          </div>
+                                          <span className="font-mono-num text-slate-300 font-semibold shrink-0">${task.progress} %</span>
+                                        </div>
+                                        <h3 className="text-[15px] font-bold text-white font-display leading-snug">
+                                          ${task.title}
+                                        </h3>
+                                        <div className="flex items-center justify-between gap-2 pt-0.5 text-xs">
+                                          <span className=${`font-medium truncate ${
+                                            task.status === 'terminado'
+                                              ? 'text-emerald-400'
+                                              : dateInfo.isToday || dateInfo.isOverdue
+                                              ? 'text-[#FF6B4A]'
+                                              : 'text-slate-400'
+                                          }`}>
+                                            ${task.status === 'terminado' ? 'Completado' : `${dateInfo.shortLabel} · ${task.tag}`}
+                                          </span>
+                                          <span className="text-[11px] font-mono-num text-slate-400 shrink-0">
+                                            ${task.completedSubtasks}/${task.totalSubtasks} pasos
+                                          </span>
+                                        </div>
+                                        <div className="w-full h-1.5 rounded-full bg-[#222B3D] overflow-hidden mt-2">
+                                          <div className=${`h-full rounded-full ${barColor}`} style=${{ width: `${Math.max(6, task.progress)}%` }} />
+                                        </div>
+                                      </div>
+
+                                      <div className="mt-3 pt-2.5 border-t border-[#1E2638]/80 flex items-center justify-between gap-2">
+                                        <button
+                                          type="button"
+                                          onClick=${() => handleSelectTask(task.id)}
+                                          className="text-[11px] font-medium text-slate-400 hover:text-white cursor-pointer"
+                                        >
+                                          Ver subtareas
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick=${() => handleStatusChange(task.id, nextStatus.next)}
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#1C2436] hover:bg-[#263149] text-[11px] font-medium text-slate-200 cursor-pointer"
+                                        >
+                                          <span>${nextStatus.label}</span>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  `;
+                                })}
+                                ${colTasks.length === 0 && html`
+                                  <div
+                                    data-drop-status=${col.status}
+                                    className=${`rounded-2xl border border-dashed p-6 text-center transition-colors ${
+                                      isDrop
+                                        ? 'border-[#FF6B4A] bg-[#FF6B4A]/10 text-white'
+                                        : 'border-[#1E2638] text-slate-500'
+                                    }`}
+                                  >
+                                    <p className="text-xs">
+                                      ${isDrop
+                                        ? `Suelta aquí para mover a ${col.title}`
+                                        : `Sin tareas en ${col.title} (arrastra aquí o pulsa +)`}
+                                    </p>
+                                  </div>
+                                `}
+                              </div>
+                            </div>
+                          `;
+                        })}
+                    </div>
+                  ` : viewMode === 'lista' ? html`
+                    <div className="rounded-2xl bg-[#131822] border border-[#1F2737] overflow-hidden divide-y divide-[#1E2638]">
+                      ${filteredTasks.map((task) => {
+                        const dateInfo = formatSpanishDate(task.dueDate, todayIso);
+                        return html`
+                          <div
+                            key=${task.id}
+                            onClick=${() => handleSelectTask(task.id)}
+                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 hover:bg-[#161D2B] cursor-pointer"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-xs text-slate-400">
+                                ${CATEGORY_LABELS[task.category]} · ${task.subtitle} · ${dateInfo.fullDate}
+                              </p>
+                              <p className="text-sm font-bold text-white font-display mt-0.5 truncate">${task.title}</p>
+                            </div>
+                            <div className="flex items-center gap-4 shrink-0">
+                              <span className="text-xs font-mono-num text-[#FF6B4A] font-semibold">${task.progress} %</span>
+                              <span className="text-xs px-2.5 py-1 rounded-lg bg-[#1C2436] text-slate-200">${STATUS_LABELS[task.status]}</span>
+                            </div>
+                          </div>
+                        `;
+                      })}
+                    </div>
+                  ` : html`
+                    <!-- Calendar View -->
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between gap-2 bg-[#131822] border border-[#1F2737] rounded-2xl px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-base sm:text-lg font-extrabold text-white font-display capitalize">
+                            ${SPANISH_MONTHS[calMonth]} ${calYear}
+                          </h2>
+                          <button
+                            type="button"
+                            onClick=${() => {
+                              const [y, m] = todayIso.split('-').map(Number);
+                              setCalYear(y);
+                              setCalMonth(m - 1);
+                              setSelectedCalDate(todayIso);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-[#1B2333] text-xs font-medium text-[#FF6B4A] cursor-pointer"
+                          >
+                            Hoy
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick=${() => {
+                              if (calMonth === 0) { setCalMonth(11); setCalYear((y) => y - 1); }
+                              else setCalMonth((m) => m - 1);
+                            }}
+                            className="p-2 rounded-xl bg-[#1B2333] text-slate-200 cursor-pointer"
+                          >
+                            <${ChevronLeft} className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick=${() => {
+                              if (calMonth === 11) { setCalMonth(0); setCalYear((y) => y + 1); }
+                              else setCalMonth((m) => m + 1);
+                            }}
+                            className="p-2 rounded-xl bg-[#1B2333] text-slate-200 cursor-pointer"
+                          >
+                            <${ChevronRight} className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl bg-[#131822] border border-[#1F2737] overflow-hidden">
+                        <div className="grid grid-cols-7 border-b border-[#1E2638] bg-[#0F131C]">
+                          ${WEEKDAYS_SHORT.map((d) => html`
+                            <div key=${d} className="py-2.5 text-center text-[11px] font-semibold text-slate-400 uppercase">${d}</div>
+                          `)}
+                        </div>
+                        <div className="grid grid-cols-7 divide-x divide-y divide-[#1E2638]">
+                          ${calendarCells.map((cell) => {
+                            const dayTasks = tasksByDate[cell.isoDate] || [];
+                            const isSel = selectedCalDate === cell.isoDate;
+                            return html`
+                              <div
+                                key=${cell.isoDate}
+                                onClick=${() => setSelectedCalDate(cell.isoDate)}
+                                className=${`min-h-[74px] sm:min-h-[106px] p-1.5 sm:p-2 flex flex-col justify-between cursor-pointer ${
+                                  !cell.isCurrentMonth ? 'bg-[#0B0E14]/60 text-slate-600' : isSel ? 'bg-[#192132]' : 'hover:bg-[#161D2B]'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className=${`w-6 h-6 rounded-full text-xs font-mono-num flex items-center justify-center font-semibold ${
+                                    cell.isToday ? 'bg-[#FF6B4A] text-[#0B0E14]' : ''
+                                  }`}>
+                                    ${cell.dayNumber}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick=${(e) => {
+                                      e.stopPropagation();
+                                      openNewTaskModal('pendiente', cell.isoDate);
+                                    }}
+                                    className="p-1 rounded text-slate-400 hover:text-white cursor-pointer"
+                                  >
+                                    <${Plus} className="w-3 h-3" />
+                                  </button>
+                                </div>
+                                <div className="hidden sm:flex flex-col gap-1 mt-1">
+                                  ${dayTasks.slice(0, 3).map((t) => html`
+                                    <button
+                                      key=${t.id}
+                                      type="button"
+                                      onClick=${(e) => {
+                                        e.stopPropagation();
+                                        handleSelectTask(t.id);
+                                      }}
+                                      className="w-full text-left px-1.5 py-0.5 rounded bg-[#FF6B4A]/20 border border-[#FF6B4A]/40 text-white text-[10px] truncate cursor-pointer"
+                                    >
+                                      ${t.title}
+                                    </button>
+                                  `)}
+                                </div>
+                                ${dayTasks.length > 0 && html`
+                                  <div className="flex sm:hidden items-center justify-center gap-1 mt-1">
+                                    ${dayTasks.slice(0, 4).map((t) => html`
+                                      <span key=${t.id} className="w-2 h-2 rounded-full bg-[#FF6B4A]" />
+                                    `)}
+                                  </div>
+                                `}
+                              </div>
+                            `;
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl bg-[#131822] border border-[#1F2737] p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-bold text-white font-display">
+                            Entregas del ${formatSpanishDate(selectedCalDate, todayIso).fullDate}
+                          </h3>
+                          <button
+                            type="button"
+                            onClick=${() => openNewTaskModal('pendiente', selectedCalDate)}
+                            className="px-3 py-1.5 rounded-xl bg-[#FF6B4A] text-[#0B0E14] text-xs font-semibold cursor-pointer"
+                          >
+                            + Añadir este día
+                          </button>
+                        </div>
+                        ${(tasksByDate[selectedCalDate] || []).length === 0 ? html`
+                          <p className="text-xs text-slate-500">Sin entregas para este día.</p>
+                        ` : html`
+                          <div className="space-y-2">
+                            ${(tasksByDate[selectedCalDate] || []).map((t) => html`
+                              <button
+                                key=${t.id}
+                                type="button"
+                                onClick=${() => handleSelectTask(t.id)}
+                                className="w-full flex items-center justify-between p-3 rounded-xl bg-[#0B0E14] border border-[#1E2638] hover:border-[#FF6B4A] text-left cursor-pointer"
+                              >
+                                <div>
+                                  <p className="text-[11px] text-slate-400">${CATEGORY_LABELS[t.category]} · ${t.subtitle}</p>
+                                  <p className="text-xs font-bold text-white">${t.title}</p>
+                                </div>
+                                <span className="text-xs font-mono-num font-semibold text-[#FF6B4A]">${t.progress} %</span>
+                              </button>
+                            `)}
+                          </div>
+                        `}
+                      </div>
+                    </div>
+                  `}
+                </div>
+
+                ${touchDragGhost && html`
+                  <div
+                    aria-hidden="true"
+                    style=${{
+                      left: `${touchDragGhost.x}px`,
+                      top: `${touchDragGhost.y}px`,
+                      transform: 'translate(-50%, -65%) rotate(2deg)',
+                    }}
+                    className="fixed z-50 pointer-events-none w-60 max-w-[78vw] rounded-2xl p-3.5 bg-[#171E2E]/95 border-2 border-[#FF6B4A] shadow-2xl backdrop-blur-md"
+                  >
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-[#FF6B4A]">
+                      ${dragOverColumn
+                        ? `Soltar en: ${STATUS_LABELS[dragOverColumn]}`
+                        : 'Arrastra a otra columna...'}
+                    </p>
+                    <p className="text-xs font-bold text-white font-display truncate mt-0.5">
+                      ${touchDragGhost.title}
+                    </p>
+                  </div>
+                `}
+              </section>
+
+              <!-- Right Inspector (Desktop) -->
+              <aside className="hidden lg:block w-[360px] xl:w-[380px] shrink-0 bg-[#0F131C] border-l border-[#1E2638] p-5 overflow-y-auto">
+                ${renderInspectorContent()}
+              </aside>
+
+              <!-- Mobile / Tablet Drawer -->
+              ${isMobileDrawerOpen && selectedTask && html`
+                <div
+                  className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end md:items-end bg-black/70 backdrop-blur-xs"
+                  onClick=${(e) => { if (e.target === e.currentTarget) setIsMobileDrawerOpen(false); }}
+                >
+                  <div className="w-full md:max-w-md max-h-[88vh] md:max-h-full md:h-full rounded-t-3xl md:rounded-none md:rounded-l-3xl bg-[#0F131C] border-t md:border-l border-[#263044] px-4 pt-2 pb-8 overflow-y-auto shadow-2xl">
+                    <div className="w-10 h-1.5 bg-slate-700 rounded-full mx-auto my-2 md:hidden" />
+                    ${renderInspectorContent()}
+                  </div>
+                </div>
+              `}
+            </main>
+
+            <!-- Create / Edit Modal -->
+            ${isTaskModalOpen && html`
+              <${TaskFormModal}
+                editingTask=${editingTask}
+                defaultStatus=${modalDefaultStatus}
+                defaultDueDate=${modalDefaultDueDate || todayIso}
+                todayIso=${todayIso}
+                onClose=${() => setIsTaskModalOpen(false)}
+                onSave=${(draft) => {
+                  if (editingTask) {
+                    setTasks((prev) =>
+                      prev.map((t) => (t.id === editingTask.id ? { ...t, ...draft } : t))
+                    );
+                  } else {
+                    const newTaskId = makeSafeId('task');
+                    const subs = (draft.initialSubtasks || [])
+                      .filter((s) => s.title.trim())
+                      .map((s, i) => ({
+                        id: makeSafeId(`sub-${i}`),
+                        ownerId: 'demo-user',
+                        taskId: newTaskId,
+                        title: s.title.trim(),
+                        completed: false,
+                        scheduleLabel: s.scheduleLabel || 'En curso',
+                        sortOrder: i + 1,
+                      }));
+                    const { progress, totalSubtasks, completedSubtasks } = calculateTaskProgress(subs, draft.status);
+                    const newTask = {
+                      id: newTaskId,
+                      ownerId: 'demo-user',
+                      title: draft.title.trim(),
+                      subtitle: draft.subtitle.trim(),
+                      category: draft.category,
+                      status: draft.status,
+                      dueDate: draft.dueDate,
+                      tag: draft.tag.trim() || 'Entrega',
+                      progress,
+                      totalSubtasks,
+                      completedSubtasks,
+                    };
+                    setTasks((prev) => [newTask, ...prev]);
+                    setSubtasks((prev) => [...prev, ...subs]);
+                    setSelectedTaskId(newTaskId);
+                  }
+                  setIsTaskModalOpen(false);
+                }}
+              />
+            `}
+
+            <!-- Cloud Account Sync & Backup Modal -->
+            ${isBackupModalOpen && html`
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+                onClick=${(e) => { if (e.target === e.currentTarget) setIsBackupModalOpen(false); }}
+              >
+                <div className="w-full max-w-lg rounded-2xl bg-[#131822] border border-[#263044] p-5 sm:p-6 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-base font-extrabold text-white font-display">
+                        Cuenta y Sincronización (PC · Móvil · Tablet)
+                      </h2>
+                      <p className="text-xs text-slate-400">
+                        Conecta tus dispositivos en tiempo real sin exportar ni importar archivos
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick=${() => setIsBackupModalOpen(false)}
+                      className="p-2 rounded-xl text-slate-400 hover:text-white cursor-pointer"
+                    >
+                      <${X} className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <!-- Real-Time Cloud Account Box -->
+                  <div className="rounded-2xl bg-[#0B0E14] border-2 border-[#FF6B4A]/60 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-xs font-extrabold text-white">
+                        <${KeyRound} className="w-4 h-4 text-[#FF6B4A]" />
+                        <span>Cuenta Enfoque (Sincronización en Tiempo Real)</span>
+                      </div>
+                      ${cloudAccount && html`
+                        <span className=${`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                          isCloudConnected
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        }`}>
+                          <span className=${`w-1.5 h-1.5 rounded-full ${isCloudConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                          ${isCloudConnected ? 'En vivo' : 'Conectando...'}
+                        </span>
+                      `}
+                    </div>
+
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      Introduce el mismo <strong>Usuario o Correo</strong> y <strong>Contraseña</strong> en tu PC, móvil y tableta. Cualquier tarea que crees, arrastres o completes se actualizará automáticamente en todos tus dispositivos al instante.
+                    </p>
+
+                    ${cloudAccount ? html`
+                      <div className="flex items-center justify-between gap-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 px-3.5 py-2.5 text-xs">
+                        <div className="flex items-center gap-2 min-w-0 text-emerald-300 font-semibold">
+                          <${UserCheck} className="w-4 h-4 shrink-0" />
+                          <span className="truncate">Conectado como: ${cloudAccount.identifier}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick=${() => pullOrSeedCloudAccount(cloudAccount)}
+                            className="px-2.5 py-1 rounded-lg bg-[#161E2E] hover:bg-[#232F46] text-slate-200 text-[11px] font-medium flex items-center gap-1 cursor-pointer"
+                          >
+                            <${RefreshCw} className=${`w-3 h-3 text-[#FF6B4A] ${isSyncingCloud ? 'animate-spin' : ''}`} />
+                            <span>Sync</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick=${handleDisconnectCloudAccount}
+                            title="Cerrar sesión"
+                            className="p-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 cursor-pointer"
+                          >
+                            <${LogOut} className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ` : html`
+                      <form onSubmit=${handleConnectCloudAccount} className="space-y-2.5">
+                        ${accountFormError && html`
+                          <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-1.5">
+                            ${accountFormError}
+                          </p>
+                        `}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value=${accountInput}
+                            onChange=${(e) => setAccountInput(e.target.value)}
+                            placeholder="Usuario o correo (ej. alejandro)"
+                            autoComplete="username"
+                            className="w-full px-3 py-2.5 rounded-xl bg-[#131822] border border-[#242F46] text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#FF6B4A]"
+                          />
+                          <input
+                            type="password"
+                            value=${passwordInput}
+                            onChange=${(e) => setPasswordInput(e.target.value)}
+                            placeholder="Contraseña o PIN (mín. 4 caract.)"
+                            autoComplete="current-password"
+                            className="w-full px-3 py-2.5 rounded-xl bg-[#131822] border border-[#242F46] text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#FF6B4A]"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          disabled=${isSyncingCloud}
+                          className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#FF6B4A] hover:bg-[#ff7e62] text-[#0B0E14] font-extrabold text-xs py-2.5 px-4 transition-colors cursor-pointer"
+                        >
+                          <${Cloud} className="w-4 h-4" />
+                          <span>
+                            ${isSyncingCloud
+                              ? 'Sincronizando cuenta...'
+                              : 'Conectar / Crear Cuenta en la Nube'}
+                          </span>
+                        </button>
+                      </form>
+                    `}
+                  </div>
+
+                  <!-- Optional Offline JSON Backup -->
+                  <div className="rounded-xl bg-[#0B0E14] border border-[#1E2638] p-4 space-y-2.5">
+                    <p className="text-xs font-bold text-white">
+                      Copia de seguridad manual (Opcional · Archivo .json)
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick=${handleExportBackup}
+                        className="flex items-center justify-center gap-1.5 rounded-xl bg-[#1B2333] hover:bg-[#253047] text-white font-semibold text-xs py-2.5 px-3 cursor-pointer"
+                      >
+                        <${FileDown} className="w-3.5 h-3.5 text-[#FF6B4A]" />
+                        <span>Exportar JSON</span>
+                      </button>
+                      <input
+                        ref=${fileInputRef}
+                        type="file"
+                        accept=".json,application/json"
+                        className="hidden"
+                        onChange=${(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleImportBackup(f);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick=${() => fileInputRef.current?.click()}
+                        className="flex items-center justify-center gap-1.5 rounded-xl bg-[#1B2333] hover:bg-[#253047] text-white font-semibold text-xs py-2.5 px-3 cursor-pointer"
+                      >
+                        <${FileUp} className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Importar JSON</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick=${handleResetDemo}
+                        className="flex items-center justify-center gap-1.5 rounded-xl bg-[#1B2333] hover:bg-[#253047] text-slate-300 hover:text-white text-xs py-2.5 px-3 cursor-pointer"
+                      >
+                        <${RotateCcw} className="w-3.5 h-3.5" />
+                        <span>Datos Demo</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `}
+          </div>
+        `;
+      }
+
+      function TaskFormModal({ editingTask, defaultStatus, defaultDueDate, todayIso, onClose, onSave }) {
+        const [title, setTitle] = useState(editingTask?.title || '');
+        const [subtitle, setSubtitle] = useState(editingTask?.subtitle || '');
+        const [category, setCategory] = useState(editingTask?.category || 'trabajo');
+        const [status, setStatus] = useState(editingTask?.status || defaultStatus);
+        const [dueDate, setDueDate] = useState(editingTask?.dueDate || defaultDueDate || todayIso);
+        const [tag, setTag] = useState(editingTask?.tag || 'Entrega');
+        const [subtaskDrafts, setSubtaskDrafts] = useState([
+          { title: 'Primer bloque / preparación', scheduleLabel: 'En curso' },
+          { title: 'Práctica o desarrollo', scheduleLabel: 'Hoy' },
+          { title: 'Repaso final y entrega', scheduleLabel: 'Mañana' },
+        ]);
+        const [error, setError] = useState('');
+
+        return html`
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
+            onClick=${(e) => { if (e.target === e.currentTarget) onClose(); }}
+          >
+            <div className="w-full max-w-lg rounded-2xl bg-[#131822] border border-[#263044] p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-extrabold text-white font-display">
+                  ${editingTask ? 'Editar elemento' : 'Nuevo Trabajo, Examen o Tarea'}
+                </h2>
+                <button type="button" onClick=${onClose} className="p-2 rounded-xl text-slate-400 hover:text-white cursor-pointer">
+                  <${X} className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form
+                onSubmit=${(e) => {
+                  e.preventDefault();
+                  if (!title.trim() || !subtitle.trim()) {
+                    setError('Completa el título y la asignatura o área.');
+                    return;
+                  }
+                  onSave({ title, subtitle, category, status, dueDate, tag, initialSubtasks: subtaskDrafts });
+                }}
+                className="space-y-4"
+              >
+                ${error && html`
+                  <div className="rounded-xl bg-rose-500/15 border border-rose-500/40 px-3.5 py-2 text-xs text-rose-300">
+                    ${error}
+                  </div>
+                `}
+
+                <div className="grid grid-cols-3 gap-2">
+                  ${[
+                    { id: 'trabajo', label: 'Trabajo' },
+                    { id: 'examen', label: 'Examen' },
+                    { id: 'diario', label: 'Día a día' },
+                  ].map((cat) => html`
+                    <button
+                      key=${cat.id}
+                      type="button"
+                      onClick=${() => setCategory(cat.id)}
+                      className=${`py-2 px-3 rounded-xl text-xs font-medium border cursor-pointer ${
+                        category === cat.id
+                          ? 'bg-[#FF6B4A]/20 border-[#FF6B4A] text-white font-semibold'
+                          : 'bg-[#0B0E14] border-[#222B3D] text-slate-400'
+                      }`}
+                    >
+                      ${cat.label}
+                    </button>
+                  `)}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1">Título</label>
+                    <input
+                      type="text"
+                      value=${title}
+                      onChange=${(e) => setTitle(e.target.value)}
+                      placeholder="Ej. Examen de Estadística"
+                      autoFocus
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B0E14] border border-[#242F46] text-xs text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1">Asignatura o área</label>
+                    <input
+                      type="text"
+                      value=${subtitle}
+                      onChange=${(e) => setSubtitle(e.target.value)}
+                      placeholder="Ej. Universidad · Aula B4"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B0E14] border border-[#242F46] text-xs text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1">Fecha límite</label>
+                    <input
+                      type="date"
+                      value=${dueDate}
+                      onChange=${(e) => setDueDate(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl bg-[#0B0E14] border border-[#242F46] text-xs text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1">Estado</label>
+                    <select
+                      value=${status}
+                      onChange=${(e) => setStatus(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl bg-[#0B0E14] border border-[#242F46] text-xs text-white"
+                    >
+                      <option value="pendiente">Pendiente</option>
+                      <option value="en_marcha">En marcha</option>
+                      <option value="terminado">Terminado</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1">Etiqueta</label>
+                    <input
+                      type="text"
+                      value=${tag}
+                      onChange=${(e) => setTag(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl bg-[#0B0E14] border border-[#242F46] text-xs text-white"
+                    />
+                  </div>
+                </div>
+
+                ${!editingTask && html`
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-slate-300">Subtareas iniciales</label>
+                      <button
+                        type="button"
+                        onClick=${() => setSubtaskDrafts((p) => [...p, { title: '', scheduleLabel: 'En curso' }])}
+                        className="text-xs font-semibold text-[#FF6B4A] cursor-pointer"
+                      >
+                        + Añadir paso
+                      </button>
+                    </div>
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      ${subtaskDrafts.map((item, idx) => html`
+                        <div key=${idx} className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value=${item.title}
+                            onChange=${(e) => {
+                              const val = e.target.value;
+                              setSubtaskDrafts((p) => p.map((s, i) => (i === idx ? { ...s, title: val } : s)));
+                            }}
+                            placeholder=${`Paso ${idx + 1}`}
+                            className="flex-1 px-3 py-2 rounded-xl bg-[#0B0E14] border border-[#242F46] text-xs text-white"
+                          />
+                          <button
+                            type="button"
+                            onClick=${() => setSubtaskDrafts((p) => p.filter((_, i) => i !== idx))}
+                            className="p-2 text-slate-500 hover:text-rose-400 cursor-pointer"
+                          >
+                            <${Trash2} className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      `)}
+                    </div>
+                  </div>
+                `}
+
+                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#1E2638]">
+                  <button
+                    type="button"
+                    onClick=${onClose}
+                    className="px-4 py-2.5 rounded-xl bg-[#1B2333] text-xs font-medium text-slate-200 cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 rounded-xl bg-[#FF6B4A] text-[#0B0E14] font-semibold text-xs cursor-pointer"
+                  >
+                    ${editingTask ? 'Guardar cambios' : 'Crear y añadir'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        `;
+      }
+
+      createRoot(document.getElementById('root')).render(html`<${App} />`);
+    </script>
   </body>
 </html>
-
