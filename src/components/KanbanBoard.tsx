@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
   Calendar as CalendarIcon,
@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Cloud,
+  GripVertical,
   LayoutGrid,
   List,
   Plus,
@@ -77,6 +78,110 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const [mobileStatusTab, setMobileStatusTab] = useState<TaskStatus | 'todos'>('todos');
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
+  const [touchDragGhost, setTouchDragGhost] = useState<{
+    taskId: string;
+    title: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const longPressTimerRef = useRef<number | null>(null);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const activeTouchTaskRef = useRef<{ id: string; title: string } | null>(null);
+  const dragOverColumnRef = useRef<TaskStatus | null>(null);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const beginTouchDrag = (task: TaskItem, clientX: number, clientY: number) => {
+    clearLongPressTimer();
+    activeTouchTaskRef.current = { id: task.id, title: task.title };
+    setDraggedTaskId(task.id);
+    setTouchDragGhost({
+      taskId: task.id,
+      title: task.title,
+      x: clientX,
+      y: clientY,
+    });
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try {
+        navigator.vibrate(15);
+      } catch {
+        // Ignore vibration errors on unsupported browsers
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleGlobalTouchMove = (e: TouchEvent) => {
+      if (!activeTouchTaskRef.current) {
+        // If waiting for long-press, cancel if finger moved > 10px (user is scrolling)
+        if (longPressTimerRef.current !== null && touchStartPosRef.current && e.touches[0]) {
+          const dx = Math.abs(e.touches[0].clientX - touchStartPosRef.current.x);
+          const dy = Math.abs(e.touches[0].clientY - touchStartPosRef.current.y);
+          if (dx > 10 || dy > 10) {
+            clearLongPressTimer();
+          }
+        }
+        return;
+      }
+
+      const touch = e.touches[0];
+      if (!touch) return;
+
+      // Prevent page scroll while actively dragging a task card on tablet/mobile
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+
+      setTouchDragGhost({
+        taskId: activeTouchTaskRef.current.id,
+        title: activeTouchTaskRef.current.title,
+        x: touch.clientX,
+        y: touch.clientY,
+      });
+
+      const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
+      const dropZone = targetEl?.closest('[data-drop-status]') as HTMLElement | null;
+      const status = (dropZone?.getAttribute('data-drop-status') as TaskStatus | null) || null;
+
+      if (dragOverColumnRef.current !== status) {
+        dragOverColumnRef.current = status;
+        setDragOverColumn(status);
+      }
+    };
+
+    const finishTouchDrag = () => {
+      clearLongPressTimer();
+      if (activeTouchTaskRef.current) {
+        const taskId = activeTouchTaskRef.current.id;
+        const targetStatus = dragOverColumnRef.current;
+        if (targetStatus) {
+          onStatusChange(taskId, targetStatus);
+        }
+      }
+      activeTouchTaskRef.current = null;
+      dragOverColumnRef.current = null;
+      touchStartPosRef.current = null;
+      setDraggedTaskId(null);
+      setDragOverColumn(null);
+      setTouchDragGhost(null);
+    };
+
+    window.addEventListener('touchmove', handleGlobalTouchMove, { passive: false });
+    window.addEventListener('touchend', finishTouchDrag);
+    window.addEventListener('touchcancel', finishTouchDrag);
+
+    return () => {
+      window.removeEventListener('touchmove', handleGlobalTouchMove);
+      window.removeEventListener('touchend', finishTouchDrag);
+      window.removeEventListener('touchcancel', finishTouchDrag);
+    };
+  }, [onStatusChange]);
 
   // Calendar month state initialized from todayIso
   const initialYearMonth = useMemo(() => {
@@ -274,7 +379,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           </div>
         </div>
 
-        {/* Mobile / Small-Tablet Column Filter Tabs (Matches md:grid-cols-3 breakpoint) */}
+        {/* Mobile / Small-Tablet Column Filter Tabs (Also act as drop targets!) */}
         {viewMode === 'tablero' && (
           <div className="grid grid-cols-4 md:hidden gap-1.5 pt-0.5">
             {(
@@ -298,13 +403,35 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               ] as const
             ).map((tab) => {
               const active = mobileStatusTab === tab.id;
+              const isDropTab = tab.id !== 'todos' && dragOverColumn === tab.id;
               return (
                 <button
                   key={tab.id}
                   type="button"
+                  data-drop-status={tab.id !== 'todos' ? tab.id : undefined}
                   onClick={() => setMobileStatusTab(tab.id)}
-                  className={`px-2 py-2 rounded-xl text-[11px] font-medium whitespace-nowrap truncate transition-colors cursor-pointer min-h-[40px] ${
-                    active
+                  onDragOver={(e) => {
+                    if (tab.id === 'todos') return;
+                    e.preventDefault();
+                    if (dragOverColumn !== tab.id) setDragOverColumn(tab.id);
+                  }}
+                  onDragLeave={() => {
+                    if (tab.id !== 'todos' && dragOverColumn === tab.id) setDragOverColumn(null);
+                  }}
+                  onDrop={(e) => {
+                    if (tab.id === 'todos') return;
+                    e.preventDefault();
+                    setDragOverColumn(null);
+                    const taskId = e.dataTransfer.getData('text/plain') || draggedTaskId;
+                    if (taskId) {
+                      onStatusChange(taskId, tab.id);
+                    }
+                    setDraggedTaskId(null);
+                  }}
+                  className={`px-2 py-2 rounded-xl text-[11px] font-medium whitespace-nowrap truncate transition-all cursor-pointer min-h-[40px] ${
+                    isDropTab
+                      ? 'bg-[#FF6B4A]/30 text-white ring-2 ring-[#FF6B4A] scale-[1.03]'
+                      : active
                       ? 'bg-[#FF6B4A] text-[#0B0E14] font-semibold'
                       : 'bg-[#131822] text-slate-400 border border-[#1E2638]'
                   }`}
@@ -337,7 +464,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             </button>
           </div>
         ) : viewMode === 'tablero' ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
             {COLUMNS.filter(
               (col) => mobileStatusTab === 'todos' || mobileStatusTab === col.status
             ).map((col) => {
@@ -347,12 +474,16 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               return (
                 <div
                   key={col.status}
+                  data-drop-status={col.status}
                   onDragOver={(e) => {
                     e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
                     if (dragOverColumn !== col.status) setDragOverColumn(col.status);
                   }}
-                  onDragLeave={() => {
-                    if (dragOverColumn === col.status) setDragOverColumn(null);
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                      if (dragOverColumn === col.status) setDragOverColumn(null);
+                    }
                   }}
                   onDrop={(e) => {
                     e.preventDefault();
@@ -363,15 +494,24 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     }
                     setDraggedTaskId(null);
                   }}
-                  className={`space-y-3 rounded-2xl p-2 -m-2 transition-colors ${
-                    isDropTarget ? 'bg-[#192234]/70 ring-1 ring-[#FF6B4A]/60' : ''
+                  className={`space-y-3 rounded-2xl p-2.5 -m-1.5 min-h-[220px] transition-all ${
+                    isDropTarget
+                      ? 'bg-[#192234]/80 ring-2 ring-[#FF6B4A] shadow-lg shadow-[#FF6B4A]/10'
+                      : 'bg-transparent'
                   }`}
                 >
                   {/* Column Header */}
                   <div className="flex items-center justify-between px-1">
-                    <h2 className="text-xs font-semibold text-slate-400 tracking-tight">
-                      {col.title}
-                    </h2>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-xs font-semibold text-slate-300 tracking-tight">
+                        {col.title}
+                      </h2>
+                      {isDropTarget && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#FF6B4A]/20 text-[#FF6B4A]">
+                          Soltar aquí
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-mono-num text-slate-400">
                         {colTasks.length}
@@ -416,23 +556,57 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                             setDraggedTaskId(null);
                             setDragOverColumn(null);
                           }}
-                          className={`rounded-2xl p-4 transition-all border ${
+                          onTouchStart={(e) => {
+                            const touch = e.touches[0];
+                            if (!touch) return;
+                            touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+                            clearLongPressTimer();
+                            longPressTimerRef.current = window.setTimeout(() => {
+                              beginTouchDrag(task, touch.clientX, touch.clientY);
+                            }, 220);
+                          }}
+                          className={`rounded-2xl p-4 transition-all border select-none cursor-grab active:cursor-grabbing ${
                             isSelected
                               ? 'bg-[#171E2E] border-[#FF6B4A] shadow-lg shadow-black/40'
                               : 'bg-[#131822] border-[#1F2737] hover:border-[#33415C] hover:bg-[#151B27]'
-                          } ${draggedTaskId === task.id ? 'opacity-50 scale-[0.98]' : ''}`}
+                          } ${draggedTaskId === task.id ? 'opacity-45 scale-[0.97] ring-1 ring-[#FF6B4A]' : ''}`}
                         >
                           {/* Main Clickable Card Area to Select in Inspector */}
-                          <button
-                            type="button"
-                            onClick={() => onSelectTask(task.id)}
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => {
+                              if (!draggedTaskId) onSelectTask(task.id);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                onSelectTask(task.id);
+                              }
+                            }}
                             className="w-full text-left space-y-2 cursor-pointer focus:outline-none"
                           >
-                            {/* Quiet Unboxed Metadata Kicker (Category · Context) */}
+                            {/* Quiet Unboxed Metadata Kicker + Touch/Mouse Drag Handle */}
                             <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
-                              <span className="truncate">
-                                {CATEGORY_LABELS[task.category]} · {task.subtitle}
-                              </span>
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span
+                                  role="presentation"
+                                  title="Arrastra para mover de columna"
+                                  onTouchStart={(e) => {
+                                    e.stopPropagation();
+                                    const touch = e.touches[0];
+                                    if (touch) {
+                                      beginTouchDrag(task, touch.clientX, touch.clientY);
+                                    }
+                                  }}
+                                  className="p-1 -ml-1 rounded-md text-slate-500 hover:text-[#FF6B4A] hover:bg-[#1C2436] touch-none cursor-grab active:cursor-grabbing shrink-0"
+                                >
+                                  <GripVertical className="w-3.5 h-3.5" />
+                                </span>
+                                <span className="truncate">
+                                  {CATEGORY_LABELS[task.category]} · {task.subtitle}
+                                </span>
+                              </div>
                               <span className="font-mono-num text-slate-300 font-semibold shrink-0">
                                 {task.progress} %
                               </span>
@@ -472,7 +646,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                                 style={{ width: `${Math.max(6, task.progress)}%` }}
                               />
                             </div>
-                          </button>
+                          </div>
 
                           {/* Interactive Footer Row: Quick Status Transition */}
                           <div className="mt-3 pt-2.5 border-t border-[#1E2638]/80 flex items-center justify-between gap-2">
@@ -502,9 +676,18 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     })}
 
                     {colTasks.length === 0 && (
-                      <div className="rounded-2xl border border-dashed border-[#1E2638] p-5 text-center">
-                        <p className="text-xs text-slate-500">
-                          Sin tareas en {col.title} (arrastra aquí o pulsa +)
+                      <div
+                        data-drop-status={col.status}
+                        className={`rounded-2xl border border-dashed p-6 text-center transition-colors ${
+                          isDropTarget
+                            ? 'border-[#FF6B4A] bg-[#FF6B4A]/10 text-white'
+                            : 'border-[#1E2638] text-slate-500'
+                        }`}
+                      >
+                        <p className="text-xs">
+                          {isDropTarget
+                            ? `Suelta aquí para mover a ${col.title}`
+                            : `Sin tareas en ${col.title} (arrastra aquí o pulsa +)`}
                         </p>
                       </div>
                     )}
@@ -778,6 +961,27 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           </div>
         )}
       </div>
+      {/* Floating Touch Drag Ghost Card (Tablet & Phone Touch Drag-and-Drop) */}
+      {touchDragGhost && (
+        <div
+          aria-hidden="true"
+          style={{
+            left: `${touchDragGhost.x}px`,
+            top: `${touchDragGhost.y}px`,
+            transform: 'translate(-50%, -65%) rotate(2deg)',
+          }}
+          className="fixed z-50 pointer-events-none w-60 max-w-[78vw] rounded-2xl p-3.5 bg-[#171E2E]/95 border-2 border-[#FF6B4A] shadow-2xl backdrop-blur-md"
+        >
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#FF6B4A]">
+            {dragOverColumn
+              ? `Soltar en: ${STATUS_LABELS[dragOverColumn]}`
+              : 'Arrastra a otra columna...'}
+          </p>
+          <p className="text-xs font-bold text-white font-display truncate mt-0.5">
+            {touchDragGhost.title}
+          </p>
+        </div>
+      )}
     </section>
   );
 };
