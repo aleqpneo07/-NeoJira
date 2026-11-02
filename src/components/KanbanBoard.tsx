@@ -271,7 +271,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               </h1>
 
               {/* Mobile & Tablet quick sync + new button */}
-              <div className="flex sm:hidden items-center gap-2">
+              <div className="flex xl:hidden items-center gap-2">
                 <button
                   type="button"
                   onClick={onOpenConnectModal}
