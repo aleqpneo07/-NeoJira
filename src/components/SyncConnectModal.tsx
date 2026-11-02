@@ -8,11 +8,15 @@ import {
   ExternalLink,
   FileDown,
   FileUp,
+  KeyRound,
   LogIn,
+  LogOut,
   QrCode,
+  RefreshCw,
   RotateCcw,
   Share2,
   Smartphone,
+  UserCheck,
   X,
 } from 'lucide-react';
 import QRCode from 'qrcode';
@@ -24,6 +28,12 @@ interface SyncConnectModalProps {
   userEmail: string | null;
   onGoogleSignIn: () => void;
   authError: string | null;
+  cloudAccountId?: string | null;
+  isCloudConnected?: boolean;
+  isSyncingCloud?: boolean;
+  onConnectCloudAccount?: (identifier: string, password: string) => Promise<void> | void;
+  onDisconnectCloudAccount?: () => void;
+  onForceCloudSync?: () => void;
   onExportBackup?: () => void;
   onImportBackup?: (file: File) => void;
   onResetDemo?: () => void;
@@ -35,6 +45,12 @@ export const SyncConnectModal: React.FC<SyncConnectModalProps> = ({
   userEmail,
   onGoogleSignIn,
   authError,
+  cloudAccountId,
+  isCloudConnected,
+  isSyncingCloud,
+  onConnectCloudAccount,
+  onDisconnectCloudAccount,
+  onForceCloudSync,
   onExportBackup,
   onImportBackup,
   onResetDemo,
@@ -53,6 +69,9 @@ export const SyncConnectModal: React.FC<SyncConnectModalProps> = ({
   const [deviceTab, setDeviceTab] = useState<'opera' | 'chrome' | 'ios'>(
     isIOS ? 'ios' : 'opera'
   );
+  const [accountInput, setAccountInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [accountFormError, setAccountFormError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -153,6 +172,128 @@ export const SyncConnectModal: React.FC<SyncConnectModalProps> = ({
               <Download className="w-4 h-4" />
               <span>Instalar ahora</span>
             </button>
+          </div>
+        )}
+
+        {/* Universal Real-Time Account Sync (Works on PC file://, Phone, Tablet & Web!) */}
+        {onConnectCloudAccount && (
+          <div className="rounded-2xl bg-[#0B0E14] border-2 border-[#FF6B4A]/60 p-4 space-y-3 shadow-lg">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-extrabold text-white">
+                <KeyRound className="w-4 h-4 text-[#FF6B4A]" />
+                <span>Cuenta Enfoque (Sincronización automática PC · Móvil · Tablet)</span>
+              </div>
+              {cloudAccountId && (
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                    isCloudConnected
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      isCloudConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                    }`}
+                  />
+                  {isCloudConnected ? 'En vivo' : 'Conectando...'}
+                </span>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Escribe el mismo <strong>Correo o Usuario</strong> y <strong>Contraseña</strong> en tu PC, móvil y tableta. Tus tareas se sincronizarán en tiempo real automáticamente sin exportar ni importar archivos (incluso abriendo el archivo HTML local).
+            </p>
+
+            {cloudAccountId ? (
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between gap-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 px-3.5 py-2.5 text-xs">
+                  <div className="flex items-center gap-2 min-w-0 text-emerald-300 font-semibold">
+                    <UserCheck className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Cuenta activa: {cloudAccountId}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {onForceCloudSync && (
+                      <button
+                        type="button"
+                        onClick={onForceCloudSync}
+                        title="Forzar sincronización ahora"
+                        className="px-2.5 py-1 rounded-lg bg-[#161E2E] hover:bg-[#232F46] text-slate-200 text-[11px] font-medium flex items-center gap-1 cursor-pointer"
+                      >
+                        <RefreshCw
+                          className={`w-3 h-3 text-[#FF6B4A] ${isSyncingCloud ? 'animate-spin' : ''}`}
+                        />
+                        <span>Sync</span>
+                      </button>
+                    )}
+                    {onDisconnectCloudAccount && (
+                      <button
+                        type="button"
+                        onClick={onDisconnectCloudAccount}
+                        title="Desconectar cuenta"
+                        className="p-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 cursor-pointer"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (accountInput.trim().length < 2) {
+                    setAccountFormError('Introduce un usuario o correo (mínimo 2 caracteres).');
+                    return;
+                  }
+                  if (passwordInput.trim().length < 4) {
+                    setAccountFormError('Introduce una contraseña o PIN (mínimo 4 caracteres).');
+                    return;
+                  }
+                  setAccountFormError(null);
+                  await onConnectCloudAccount(accountInput.trim(), passwordInput.trim());
+                  setPasswordInput('');
+                }}
+                className="space-y-2.5"
+              >
+                {accountFormError && (
+                  <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-1.5">
+                    {accountFormError}
+                  </p>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={accountInput}
+                    onChange={(e) => setAccountInput(e.target.value)}
+                    placeholder="Usuario o correo (ej. alejandro)"
+                    autoComplete="username"
+                    className="w-full px-3 py-2 rounded-xl bg-[#131822] border border-[#242F46] text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#FF6B4A]"
+                  />
+                  <input
+                    type="password"
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    placeholder="Contraseña o PIN (mín. 4 caract.)"
+                    autoComplete="current-password"
+                    className="w-full px-3 py-2 rounded-xl bg-[#131822] border border-[#242F46] text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#FF6B4A]"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSyncingCloud}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#FF6B4A] hover:bg-[#ff7e62] text-[#0B0E14] font-extrabold text-xs py-2.5 px-4 transition-colors cursor-pointer"
+                >
+                  <Cloud className="w-4 h-4" />
+                  <span>
+                    {isSyncingCloud
+                      ? 'Sincronizando cuenta...'
+                      : 'Conectar / Crear Cuenta de Sincronización'}
+                  </span>
+                </button>
+              </form>
+            )}
           </div>
         )}
 

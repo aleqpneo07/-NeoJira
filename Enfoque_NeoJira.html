@@ -80,18 +80,21 @@
         FileDown,
         FileUp,
         GripVertical,
+        KeyRound,
         LayoutGrid,
         List,
         LogIn,
         LogOut,
         Pencil,
         Plus,
+        RefreshCw,
         RotateCcw,
         Search,
         SlidersHorizontal,
         Smartphone,
         SunMedium,
         Trash2,
+        UserCheck,
         WifiOff,
         X,
       } from 'https://esm.sh/lucide-react@0.469.0?deps=react@19.0.0';
@@ -100,6 +103,149 @@
 
       const LOCAL_STORAGE_TASKS_KEY = 'enfoque_local_tasks_v1';
       const LOCAL_STORAGE_SUBTASKS_KEY = 'enfoque_local_subtasks_v1';
+      const CLOUD_ACCOUNT_STORAGE_KEY = 'enfoque_cloud_account_v1';
+      const CLOUD_LAST_SYNC_ID_KEY = 'enfoque_cloud_last_sync_id_v1';
+      const NTFY_BASE_URL = 'https://ntfy.sh';
+
+      function deriveAccountTopicId(identifier, password) {
+        const cleanUser = String(identifier || '').trim().toLowerCase();
+        const cleanPass = String(password || '').trim();
+        const raw = `enfoque-neojira-sync-v1::${cleanUser}::${cleanPass}`;
+
+        let h1 = 0xdeadbeef ^ raw.length;
+        let h2 = 0x41c6ce57 ^ raw.length;
+        let h3 = 0x9e3779b9 ^ raw.length;
+        let h4 = 0x85ebca6b ^ raw.length;
+
+        for (let i = 0; i < raw.length; i++) {
+          const ch = raw.charCodeAt(i);
+          h1 = Math.imul(h1 ^ ch, 2654435761);
+          h2 = Math.imul(h2 ^ ch, 1597334677);
+          h3 = Math.imul(h3 ^ (ch + i), 2246822519);
+          h4 = Math.imul(h4 ^ (ch * 31), 3266489917);
+        }
+
+        h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+        h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+        h3 = Math.imul(h3 ^ (h3 >>> 16), 2246822507) ^ Math.imul(h4 ^ (h4 >>> 13), 3266489909);
+        h4 = Math.imul(h4 ^ (h4 >>> 16), 2246822507) ^ Math.imul(h3 ^ (h3 >>> 13), 3266489909);
+
+        const hex =
+          (h1 >>> 0).toString(16).padStart(8, '0') +
+          (h2 >>> 0).toString(16).padStart(8, '0') +
+          (h3 >>> 0).toString(16).padStart(8, '0') +
+          (h4 >>> 0).toString(16).padStart(8, '0');
+
+        return `enfoque_acct_${hex}`;
+      }
+
+      async function extractPayloadFromNtfyEvent(evt) {
+        if (!evt || evt.event !== 'message') return null;
+        try {
+          let rawJson = '';
+          if (evt.attachment?.url) {
+            const res = await fetch(evt.attachment.url, { cache: 'no-store' });
+            if (!res.ok) return null;
+            rawJson = await res.text();
+          } else if (typeof evt.message === 'string') {
+            rawJson = evt.message.replace(/^\uFEFF/, '').trim();
+          }
+          if (!rawJson || !rawJson.startsWith('{')) return null;
+          const parsed = JSON.parse(rawJson);
+          if (
+            parsed &&
+            (parsed.type === 'state_sync' || parsed.type === 'request_sync') &&
+            Array.isArray(parsed.tasks) &&
+            Array.isArray(parsed.subtasks)
+          ) {
+            return parsed;
+          }
+        } catch {}
+        return null;
+      }
+
+      async function publishCloudSnapshot(topicId, payload) {
+        try {
+          const res = await fetch(`${NTFY_BASE_URL}/${encodeURIComponent(topicId)}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'text/plain;charset=utf-8',
+              Title: 'Enfoque Sync',
+            },
+            body: JSON.stringify(payload),
+          });
+          return res.ok;
+        } catch {
+          return false;
+        }
+      }
+
+      async function fetchLatestCloudSnapshot(topicId) {
+        try {
+          const res = await fetch(
+            `${NTFY_BASE_URL}/${encodeURIComponent(topicId)}/json?poll=1&since=24h`,
+            { cache: 'no-store' }
+          );
+          if (!res.ok) return null;
+          const text = await res.text();
+          const lines = text
+            .split('\n')
+            .map((l) => l.trim())
+            .filter(Boolean);
+          for (let i = lines.length - 1; i >= 0; i--) {
+            try {
+              const evt = JSON.parse(lines[i]);
+              const payload = await extractPayloadFromNtfyEvent(evt);
+              if (payload && payload.type === 'state_sync') {
+                return payload;
+              }
+            } catch {}
+          }
+          return null;
+        } catch {
+          return null;
+        }
+      }
+
+      function subscribeToCloudTopic(topicId, onPayload, onStatusChange) {
+        let eventSource = null;
+        let reconnectTimer = null;
+        let closed = false;
+
+        const connect = () => {
+          if (closed) return;
+          try {
+            eventSource = new EventSource(`${NTFY_BASE_URL}/${encodeURIComponent(topicId)}/sse`);
+            eventSource.onopen = () => onStatusChange?.(true);
+            eventSource.onmessage = async (e) => {
+              try {
+                const evt = JSON.parse(e.data);
+                const payload = await extractPayloadFromNtfyEvent(evt);
+                if (payload) onPayload(payload);
+              } catch {}
+            };
+            eventSource.onerror = () => {
+              onStatusChange?.(false);
+              if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+              }
+              if (!closed) {
+                reconnectTimer = window.setTimeout(connect, 4000);
+              }
+            };
+          } catch {
+            onStatusChange?.(false);
+          }
+        };
+
+        connect();
+        return () => {
+          closed = true;
+          if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+          if (eventSource) eventSource.close();
+        };
+      }
 
       const CATEGORY_LABELS = {
         trabajo: 'Trabajos',
@@ -427,6 +573,164 @@
         const [calYear, setCalYear] = useState(() => Number(todayIso.split('-')[0]));
         const [calMonth, setCalMonth] = useState(() => Number(todayIso.split('-')[1]) - 1);
         const [selectedCalDate, setSelectedCalDate] = useState(todayIso);
+
+        // Cloud Account Sync state (PC, Mobile & Tablet in Real Time)
+        const [cloudAccount, setCloudAccount] = useState(() => {
+          try {
+            const saved = localStorage.getItem(CLOUD_ACCOUNT_STORAGE_KEY);
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (parsed && parsed.identifier && parsed.topicId) return parsed;
+            }
+          } catch {}
+          return null;
+        });
+        const [isCloudConnected, setIsCloudConnected] = useState(false);
+        const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+        const [accountInput, setAccountInput] = useState('');
+        const [passwordInput, setPasswordInput] = useState('');
+        const [accountFormError, setAccountFormError] = useState('');
+
+        const deviceIdRef = useRef(makeSafeId('dev'));
+        const lastSyncIdRef = useRef(
+          (() => {
+            try {
+              return localStorage.getItem(CLOUD_LAST_SYNC_ID_KEY) || '';
+            } catch {
+              return '';
+            }
+          })()
+        );
+        const isApplyingRemoteRef = useRef(false);
+        const hasCompletedInitialPullRef = useRef(false);
+        const localTasksRef = useRef(tasks);
+        const localSubtasksRef = useRef(subtasks);
+
+        useEffect(() => {
+          localTasksRef.current = tasks;
+          localSubtasksRef.current = subtasks;
+        }, [tasks, subtasks]);
+
+        const pushCurrentStateToCloud = async (account) => {
+          if (!account) return;
+          const syncId = makeSafeId('sync');
+          lastSyncIdRef.current = syncId;
+          try {
+            localStorage.setItem(CLOUD_LAST_SYNC_ID_KEY, syncId);
+          } catch {}
+          setIsSyncingCloud(true);
+          await publishCloudSnapshot(account.topicId, {
+            type: 'state_sync',
+            syncId,
+            deviceId: deviceIdRef.current,
+            accountId: account.identifier,
+            tasks: localTasksRef.current,
+            subtasks: localSubtasksRef.current,
+          });
+          setIsSyncingCloud(false);
+        };
+
+        const pullOrSeedCloudAccount = async (account) => {
+          if (!account) return;
+          setIsSyncingCloud(true);
+          const remote = await fetchLatestCloudSnapshot(account.topicId);
+          if (remote && Array.isArray(remote.tasks) && Array.isArray(remote.subtasks)) {
+            if (remote.syncId !== lastSyncIdRef.current) {
+              isApplyingRemoteRef.current = true;
+              lastSyncIdRef.current = remote.syncId;
+              try {
+                localStorage.setItem(CLOUD_LAST_SYNC_ID_KEY, remote.syncId);
+              } catch {}
+              setTasks(remote.tasks);
+              setSubtasks(remote.subtasks);
+              window.setTimeout(() => {
+                isApplyingRemoteRef.current = false;
+              }, 80);
+            }
+            hasCompletedInitialPullRef.current = true;
+            setIsSyncingCloud(false);
+          } else {
+            hasCompletedInitialPullRef.current = true;
+            await pushCurrentStateToCloud(account);
+          }
+        };
+
+        useEffect(() => {
+          if (!cloudAccount) return;
+          hasCompletedInitialPullRef.current = false;
+          pullOrSeedCloudAccount(cloudAccount);
+
+          const unsubscribe = subscribeToCloudTopic(
+            cloudAccount.topicId,
+            (payload) => {
+              if (payload.type === 'request_sync' && payload.deviceId !== deviceIdRef.current) {
+                pushCurrentStateToCloud(cloudAccount);
+                return;
+              }
+              if (
+                payload.type === 'state_sync' &&
+                payload.deviceId !== deviceIdRef.current &&
+                payload.syncId !== lastSyncIdRef.current
+              ) {
+                isApplyingRemoteRef.current = true;
+                lastSyncIdRef.current = payload.syncId;
+                try {
+                  localStorage.setItem(CLOUD_LAST_SYNC_ID_KEY, payload.syncId);
+                } catch {}
+                setTasks(payload.tasks);
+                setSubtasks(payload.subtasks);
+                window.setTimeout(() => {
+                  isApplyingRemoteRef.current = false;
+                }, 80);
+              }
+            },
+            (connected) => setIsCloudConnected(connected)
+          );
+
+          const onFocus = () => pullOrSeedCloudAccount(cloudAccount);
+          window.addEventListener('focus', onFocus);
+          return () => {
+            unsubscribe();
+            window.removeEventListener('focus', onFocus);
+          };
+        }, [cloudAccount]);
+
+        useEffect(() => {
+          if (!cloudAccount) return;
+          if (!hasCompletedInitialPullRef.current || isApplyingRemoteRef.current) return;
+          const timer = window.setTimeout(() => {
+            pushCurrentStateToCloud(cloudAccount);
+          }, 350);
+          return () => window.clearTimeout(timer);
+        }, [tasks, subtasks, cloudAccount]);
+
+        const handleConnectCloudAccount = async (e) => {
+          e.preventDefault();
+          if (accountInput.trim().length < 2) {
+            setAccountFormError('Introduce un usuario o correo (mínimo 2 caracteres).');
+            return;
+          }
+          if (passwordInput.trim().length < 4) {
+            setAccountFormError('Introduce una contraseña o PIN (mínimo 4 caracteres).');
+            return;
+          }
+          setAccountFormError('');
+          const topicId = deriveAccountTopicId(accountInput.trim(), passwordInput.trim());
+          const nextAccount = { identifier: accountInput.trim(), topicId };
+          try {
+            localStorage.setItem(CLOUD_ACCOUNT_STORAGE_KEY, JSON.stringify(nextAccount));
+          } catch {}
+          setCloudAccount(nextAccount);
+          setPasswordInput('');
+        };
+
+        const handleDisconnectCloudAccount = () => {
+          try {
+            localStorage.removeItem(CLOUD_ACCOUNT_STORAGE_KEY);
+          } catch {}
+          setCloudAccount(null);
+          setIsCloudConnected(false);
+        };
 
         // Persist to localStorage
         useEffect(() => {
@@ -1188,8 +1492,10 @@
                   onClick=${() => setIsBackupModalOpen(true)}
                   className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#19202E] border border-[#FF6B4A]/40 hover:border-[#FF6B4A] text-white font-semibold px-3.5 py-2.5 text-xs transition-colors cursor-pointer"
                 >
-                  <${FileDown} className="w-4 h-4 text-[#FF6B4A]" />
-                  <span>Exportar / Importar Datos</span>
+                  <${Cloud} className=${`w-4 h-4 ${cloudAccount ? 'text-emerald-400' : 'text-[#FF6B4A]'}`} />
+                  <span className="truncate">
+                    ${cloudAccount ? `Cuenta: ${cloudAccount.identifier}` : 'Conectar Cuenta (Sync)'}
+                  </span>
                 </button>
               </div>
             </aside>
@@ -1234,8 +1540,8 @@
                             onClick=${() => setIsBackupModalOpen(true)}
                             className="min-h-[42px] px-3 rounded-xl bg-[#151B28] border border-[#FF6B4A]/40 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
                           >
-                            <${FileDown} className="w-4 h-4 text-[#FF6B4A]" />
-                            <span>Copia</span>
+                            <${Cloud} className=${`w-4 h-4 ${cloudAccount ? 'text-emerald-400' : 'text-[#FF6B4A]'}`} />
+                            <span className="max-w-[90px] truncate">${cloudAccount ? cloudAccount.identifier : 'Conectar'}</span>
                           </button>
                           <button
                             type="button"
@@ -1818,17 +2124,22 @@
               />
             `}
 
-            <!-- Backup & Device Transfer Modal -->
+            <!-- Cloud Account Sync & Backup Modal -->
             ${isBackupModalOpen && html`
               <div
                 className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
                 onClick=${(e) => { if (e.target === e.currentTarget) setIsBackupModalOpen(false); }}
               >
-                <div className="w-full max-w-md rounded-2xl bg-[#131822] border border-[#263044] p-6 space-y-4">
+                <div className="w-full max-w-lg rounded-2xl bg-[#131822] border border-[#263044] p-5 sm:p-6 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-base font-extrabold text-white font-display">
-                      Copia de Seguridad (PC, Tableta y Móvil)
-                    </h2>
+                    <div>
+                      <h2 className="text-base font-extrabold text-white font-display">
+                        Cuenta y Sincronización (PC · Móvil · Tablet)
+                      </h2>
+                      <p className="text-xs text-slate-400">
+                        Conecta tus dispositivos en tiempo real sin exportar ni importar archivos
+                      </p>
+                    </div>
                     <button
                       type="button"
                       onClick=${() => setIsBackupModalOpen(false)}
@@ -1837,44 +2148,137 @@
                       <${X} className="w-4 h-4" />
                     </button>
                   </div>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    Tus cambios se guardan automáticamente en este dispositivo. Además, puedes exportar o importar un archivo <code>.json</code> para pasar tus tareas al instante entre tu teléfono, tableta y PC:
-                  </p>
-                  <div className="grid grid-cols-1 gap-2.5">
-                    <button
-                      type="button"
-                      onClick=${handleExportBackup}
-                      className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#FF6B4A] text-[#0B0E14] font-bold text-xs py-3 px-4 cursor-pointer"
-                    >
-                      <${FileDown} className="w-4 h-4" />
-                      <span>Exportar tareas (.json)</span>
-                    </button>
-                    <input
-                      ref=${fileInputRef}
-                      type="file"
-                      accept=".json,application/json"
-                      className="hidden"
-                      onChange=${(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) handleImportBackup(f);
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick=${() => fileInputRef.current?.click()}
-                      className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#1B2333] hover:bg-[#253047] text-white font-semibold text-xs py-3 px-4 cursor-pointer"
-                    >
-                      <${FileUp} className="w-4 h-4 text-emerald-400" />
-                      <span>Importar copia de seguridad (.json)</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick=${handleResetDemo}
-                      className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#0B0E14] border border-[#1E2638] text-slate-400 hover:text-white text-xs py-2.5 px-4 cursor-pointer"
-                    >
-                      <${RotateCcw} className="w-3.5 h-3.5" />
-                      <span>Restaurar tareas de ejemplo</span>
-                    </button>
+
+                  <!-- Real-Time Cloud Account Box -->
+                  <div className="rounded-2xl bg-[#0B0E14] border-2 border-[#FF6B4A]/60 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-xs font-extrabold text-white">
+                        <${KeyRound} className="w-4 h-4 text-[#FF6B4A]" />
+                        <span>Cuenta Enfoque (Sincronización en Tiempo Real)</span>
+                      </div>
+                      ${cloudAccount && html`
+                        <span className=${`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                          isCloudConnected
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        }`}>
+                          <span className=${`w-1.5 h-1.5 rounded-full ${isCloudConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                          ${isCloudConnected ? 'En vivo' : 'Conectando...'}
+                        </span>
+                      `}
+                    </div>
+
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      Introduce el mismo <strong>Usuario o Correo</strong> y <strong>Contraseña</strong> en tu PC, móvil y tableta. Cualquier tarea que crees, arrastres o completes se actualizará automáticamente en todos tus dispositivos al instante.
+                    </p>
+
+                    ${cloudAccount ? html`
+                      <div className="flex items-center justify-between gap-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 px-3.5 py-2.5 text-xs">
+                        <div className="flex items-center gap-2 min-w-0 text-emerald-300 font-semibold">
+                          <${UserCheck} className="w-4 h-4 shrink-0" />
+                          <span className="truncate">Conectado como: ${cloudAccount.identifier}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick=${() => pullOrSeedCloudAccount(cloudAccount)}
+                            className="px-2.5 py-1 rounded-lg bg-[#161E2E] hover:bg-[#232F46] text-slate-200 text-[11px] font-medium flex items-center gap-1 cursor-pointer"
+                          >
+                            <${RefreshCw} className=${`w-3 h-3 text-[#FF6B4A] ${isSyncingCloud ? 'animate-spin' : ''}`} />
+                            <span>Sync</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick=${handleDisconnectCloudAccount}
+                            title="Cerrar sesión"
+                            className="p-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 cursor-pointer"
+                          >
+                            <${LogOut} className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ` : html`
+                      <form onSubmit=${handleConnectCloudAccount} className="space-y-2.5">
+                        ${accountFormError && html`
+                          <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-1.5">
+                            ${accountFormError}
+                          </p>
+                        `}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value=${accountInput}
+                            onChange=${(e) => setAccountInput(e.target.value)}
+                            placeholder="Usuario o correo (ej. alejandro)"
+                            autoComplete="username"
+                            className="w-full px-3 py-2.5 rounded-xl bg-[#131822] border border-[#242F46] text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#FF6B4A]"
+                          />
+                          <input
+                            type="password"
+                            value=${passwordInput}
+                            onChange=${(e) => setPasswordInput(e.target.value)}
+                            placeholder="Contraseña o PIN (mín. 4 caract.)"
+                            autoComplete="current-password"
+                            className="w-full px-3 py-2.5 rounded-xl bg-[#131822] border border-[#242F46] text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#FF6B4A]"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          disabled=${isSyncingCloud}
+                          className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#FF6B4A] hover:bg-[#ff7e62] text-[#0B0E14] font-extrabold text-xs py-2.5 px-4 transition-colors cursor-pointer"
+                        >
+                          <${Cloud} className="w-4 h-4" />
+                          <span>
+                            ${isSyncingCloud
+                              ? 'Sincronizando cuenta...'
+                              : 'Conectar / Crear Cuenta en la Nube'}
+                          </span>
+                        </button>
+                      </form>
+                    `}
+                  </div>
+
+                  <!-- Optional Offline JSON Backup -->
+                  <div className="rounded-xl bg-[#0B0E14] border border-[#1E2638] p-4 space-y-2.5">
+                    <p className="text-xs font-bold text-white">
+                      Copia de seguridad manual (Opcional · Archivo .json)
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick=${handleExportBackup}
+                        className="flex items-center justify-center gap-1.5 rounded-xl bg-[#1B2333] hover:bg-[#253047] text-white font-semibold text-xs py-2.5 px-3 cursor-pointer"
+                      >
+                        <${FileDown} className="w-3.5 h-3.5 text-[#FF6B4A]" />
+                        <span>Exportar JSON</span>
+                      </button>
+                      <input
+                        ref=${fileInputRef}
+                        type="file"
+                        accept=".json,application/json"
+                        className="hidden"
+                        onChange=${(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleImportBackup(f);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick=${() => fileInputRef.current?.click()}
+                        className="flex items-center justify-center gap-1.5 rounded-xl bg-[#1B2333] hover:bg-[#253047] text-white font-semibold text-xs py-2.5 px-3 cursor-pointer"
+                      >
+                        <${FileUp} className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Importar JSON</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick=${handleResetDemo}
+                        className="flex items-center justify-center gap-1.5 rounded-xl bg-[#1B2333] hover:bg-[#253047] text-slate-300 hover:text-white text-xs py-2.5 px-3 cursor-pointer"
+                      >
+                        <${RotateCcw} className="w-3.5 h-3.5" />
+                        <span>Datos Demo</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

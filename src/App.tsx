@@ -56,6 +56,15 @@ import { TaskInspector } from './components/TaskInspector';
 import { TaskModal } from './components/TaskModal';
 import { SyncConnectModal } from './components/SyncConnectModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import {
+  CLOUD_ACCOUNT_STORAGE_KEY,
+  CLOUD_LAST_SYNC_ID_KEY,
+  CloudAccount,
+  deriveAccountTopicId,
+  fetchLatestCloudSnapshot,
+  publishCloudSnapshot,
+  subscribeToCloudTopic,
+} from './utils/cloudSync';
 
 const LOCAL_STORAGE_TASKS_KEY = 'enfoque_local_tasks_v1';
 const LOCAL_STORAGE_SUBTASKS_KEY = 'enfoque_local_subtasks_v1';
@@ -88,6 +97,34 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const hasSeededCloudRef = useRef<Set<string>>(new Set());
+
+  // Universal Account Cloud Sync State (works on PC file://, Mobile, Tablet & Web)
+  const [cloudAccount, setCloudAccount] = useState<CloudAccount | null>(() => {
+    try {
+      const saved = localStorage.getItem(CLOUD_ACCOUNT_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.identifier && parsed.topicId) return parsed;
+      }
+    } catch {
+      // Ignore
+    }
+    return null;
+  });
+  const [isCloudConnected, setIsCloudConnected] = useState(false);
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const deviceIdRef = useRef<string>(makeSafeId('dev'));
+  const lastSyncIdRef = useRef<string>(
+    (() => {
+      try {
+        return localStorage.getItem(CLOUD_LAST_SYNC_ID_KEY) || '';
+      } catch {
+        return '';
+      }
+    })()
+  );
+  const isApplyingRemoteRef = useRef(false);
+  const hasCompletedInitialPullRef = useRef(false);
 
   // Local state (used immediately before login and synced with Firestore once signed in)
   const [tasks, setTasks] = useState<TaskItem[]>(() => {
@@ -363,13 +400,153 @@ export default function App() {
       setAuthError(
         msg.includes('popup-closed-by-user')
           ? 'Cerraste la ventana de acceso antes de completar el inicio de sesión.'
-          : 'No se pudo iniciar sesión con Google. Inténtalo de nuevo.'
+          : 'Para sincronizar sin restricciones de dominio (incluso en archivo HTML local), usa arriba tu «Cuenta Enfoque (Usuario + Contraseña)».'
       );
     }
   };
 
   const handleSignOut = async () => {
-    await signOut(auth);
+    if (user) {
+      await signOut(auth);
+    }
+    if (cloudAccount) {
+      handleDisconnectCloudAccount();
+    }
+  };
+
+  // Universal Account Real-Time Cloud Sync (PC, Tablet & Phone)
+  const pushCurrentStateToCloud = async (account: CloudAccount) => {
+    const syncId = makeSafeId('sync');
+    lastSyncIdRef.current = syncId;
+    try {
+      localStorage.setItem(CLOUD_LAST_SYNC_ID_KEY, syncId);
+    } catch {
+      // Ignore
+    }
+    setIsSyncingCloud(true);
+    await publishCloudSnapshot(account.topicId, {
+      type: 'state_sync',
+      syncId,
+      deviceId: deviceIdRef.current,
+      accountId: account.identifier,
+      tasks: localTasksRef.current,
+      subtasks: localSubtasksRef.current,
+    });
+    setIsSyncingCloud(false);
+  };
+
+  const pullOrSeedCloudAccount = async (account: CloudAccount) => {
+    setIsSyncingCloud(true);
+    const remote = await fetchLatestCloudSnapshot(account.topicId);
+    if (remote && Array.isArray(remote.tasks) && Array.isArray(remote.subtasks)) {
+      if (remote.syncId !== lastSyncIdRef.current) {
+        isApplyingRemoteRef.current = true;
+        lastSyncIdRef.current = remote.syncId;
+        try {
+          localStorage.setItem(CLOUD_LAST_SYNC_ID_KEY, remote.syncId);
+        } catch {
+          // Ignore
+        }
+        setTasks(remote.tasks);
+        setSubtasks(remote.subtasks);
+        window.setTimeout(() => {
+          isApplyingRemoteRef.current = false;
+        }, 80);
+      }
+      hasCompletedInitialPullRef.current = true;
+      setIsSyncingCloud(false);
+    } else {
+      // Cloud has no snapshot yet for this account -> upload current local tasks
+      hasCompletedInitialPullRef.current = true;
+      await pushCurrentStateToCloud(account);
+    }
+  };
+
+  useEffect(() => {
+    if (!cloudAccount || user) return;
+    hasCompletedInitialPullRef.current = false;
+
+    pullOrSeedCloudAccount(cloudAccount);
+
+    const unsubscribe = subscribeToCloudTopic(
+      cloudAccount.topicId,
+      (payload) => {
+        if (payload.type === 'request_sync' && payload.deviceId !== deviceIdRef.current) {
+          pushCurrentStateToCloud(cloudAccount);
+          return;
+        }
+        if (
+          payload.type === 'state_sync' &&
+          payload.deviceId !== deviceIdRef.current &&
+          payload.syncId !== lastSyncIdRef.current
+        ) {
+          isApplyingRemoteRef.current = true;
+          lastSyncIdRef.current = payload.syncId;
+          try {
+            localStorage.setItem(CLOUD_LAST_SYNC_ID_KEY, payload.syncId);
+          } catch {
+            // Ignore
+          }
+          setTasks(payload.tasks);
+          setSubtasks(payload.subtasks);
+          window.setTimeout(() => {
+            isApplyingRemoteRef.current = false;
+          }, 80);
+        }
+      },
+      (connected) => setIsCloudConnected(connected)
+    );
+
+    const handleWindowFocus = () => {
+      pullOrSeedCloudAccount(cloudAccount);
+    };
+    window.addEventListener('focus', handleWindowFocus);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, [cloudAccount, user]);
+
+  // Automatically broadcast local changes to all connected devices
+  useEffect(() => {
+    if (!cloudAccount || user) return;
+    if (!hasCompletedInitialPullRef.current || isApplyingRemoteRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      pushCurrentStateToCloud(cloudAccount);
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [tasks, subtasks, cloudAccount, user]);
+
+  const handleConnectCloudAccount = async (identifier: string, password: string) => {
+    const topicId = deriveAccountTopicId(identifier, password);
+    const nextAccount: CloudAccount = {
+      identifier: identifier.trim(),
+      topicId,
+    };
+    try {
+      localStorage.setItem(CLOUD_ACCOUNT_STORAGE_KEY, JSON.stringify(nextAccount));
+    } catch {
+      // Ignore
+    }
+    setCloudAccount(nextAccount);
+  };
+
+  const handleDisconnectCloudAccount = () => {
+    try {
+      localStorage.removeItem(CLOUD_ACCOUNT_STORAGE_KEY);
+    } catch {
+      // Ignore
+    }
+    setCloudAccount(null);
+    setIsCloudConnected(false);
+  };
+
+  const handleForceCloudSync = async () => {
+    if (!cloudAccount) return;
+    await pullOrSeedCloudAccount(cloudAccount);
   };
 
   // Task & Subtask Mutation Handlers
@@ -880,9 +1057,9 @@ export default function App() {
         monthlySummary={monthlySummary}
         priorityToday={priorityToday}
         onSelectTask={handleSelectTask}
-        userEmail={user?.email || null}
-        isSyncing={!isAuthReady}
-        onGoogleSignIn={handleGoogleSignIn}
+        userEmail={user?.email || cloudAccount?.identifier || null}
+        isSyncing={!isAuthReady || isSyncingCloud}
+        onGoogleSignIn={() => setIsConnectModalOpen(true)}
         onSignOut={handleSignOut}
         onOpenConnectModal={() => setIsConnectModalOpen(true)}
       />
@@ -905,7 +1082,7 @@ export default function App() {
           onSortByChange={setSortBy}
           weeklyDeliveriesCount={weeklyDeliveriesCount}
           todayIso={todayIso}
-          userEmail={user?.email || null}
+          userEmail={user?.email || cloudAccount?.identifier || null}
           searchInputRef={searchInputRef}
         />
 
@@ -947,6 +1124,12 @@ export default function App() {
         userEmail={user?.email || null}
         onGoogleSignIn={handleGoogleSignIn}
         authError={authError}
+        cloudAccountId={cloudAccount?.identifier || null}
+        isCloudConnected={isCloudConnected}
+        isSyncingCloud={isSyncingCloud}
+        onConnectCloudAccount={handleConnectCloudAccount}
+        onDisconnectCloudAccount={handleDisconnectCloudAccount}
+        onForceCloudSync={handleForceCloudSync}
         onExportBackup={handleExportBackup}
         onImportBackup={handleImportBackup}
         onResetDemo={handleResetDemoData}
