@@ -112,7 +112,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       <div className="w-full max-w-lg rounded-2xl bg-[#131822] border border-[#263044] p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-extrabold text-white font-display">
-            {editingTask ? 'Editar elemento' : 'Nuevo Trabajo, Examen o Tarea'}
+            {editingTask ? 'Editar proyecto' : 'Nuevo Proyecto'}
           </h2>
           <button
             type="button"

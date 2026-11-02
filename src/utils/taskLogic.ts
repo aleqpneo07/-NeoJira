@@ -182,10 +182,7 @@ export function validateTaskDraft(draft: Partial<TaskDraftInput>): {
   const subtitle = (draft.subtitle ?? '').trim().slice(0, TASK_CONSTRAINTS.SUBTITLE_MAX_LEN);
   const tag = (draft.tag ?? '').trim().slice(0, TASK_CONSTRAINTS.TAG_MAX_LEN);
   const dueDate = (draft.dueDate ?? '').trim();
-  const category: TaskCategory =
-    draft.category === 'trabajo' || draft.category === 'examen' || draft.category === 'diario'
-      ? draft.category
-      : 'trabajo';
+  const category: TaskCategory = 'proyecto';
   const status: TaskStatus =
     draft.status === 'pendiente' || draft.status === 'en_marcha' || draft.status === 'terminado'
       ? draft.status
@@ -201,14 +198,7 @@ export function validateTaskDraft(draft: Partial<TaskDraftInput>): {
     return { valid: false, error: 'Selecciona una fecha válida (AAAA-MM-DD).' };
   }
 
-  const finalTag =
-    tag.length >= TASK_CONSTRAINTS.TAG_MIN_LEN
-      ? tag
-      : category === 'examen'
-      ? 'Temario'
-      : category === 'trabajo'
-      ? 'Proyecto'
-      : 'Rutina';
+  const finalTag = tag.length >= TASK_CONSTRAINTS.TAG_MIN_LEN ? tag : 'Proyecto';
 
   const sanitizedSubtasks = (draft.initialSubtasks ?? [])
     .map((s) => ({
@@ -235,18 +225,13 @@ export function validateTaskDraft(draft: Partial<TaskDraftInput>): {
 
 export function filterAndSortTasks(
   tasks: TaskItem[],
-  filter: NavigationFilter,
+  _filter: NavigationFilter,
   searchQuery: string,
   sortBy: SortOption = 'fecha'
 ): TaskItem[] {
   const q = searchQuery.trim().toLowerCase();
 
   const filtered = tasks.filter((task) => {
-    if (filter === 'trabajo' && task.category !== 'trabajo') return false;
-    if (filter === 'examen' && task.category !== 'examen') return false;
-    if (filter === 'diario' && task.category !== 'diario') return false;
-    if (filter === 'entregas' && task.status === 'terminado') return false;
-
     if (q.length > 0) {
       const hay = `${task.title} ${task.subtitle} ${task.tag} ${task.category}`.toLowerCase();
       if (!hay.includes(q)) return false;
@@ -342,7 +327,7 @@ export function getInitialSeedData(
       ownerId,
       title: 'Identidad Estudio Lumen',
       subtitle: 'Estudio Lumen',
-      category: 'trabajo',
+      category: 'proyecto',
       status: 'en_marcha',
       dueDate: todayIso,
       tag: 'Identidad visual',
@@ -355,7 +340,7 @@ export function getInitialSeedData(
       ownerId,
       title: 'Examen Parcial de Estadística',
       subtitle: 'Universidad · Aula B4',
-      category: 'examen',
+      category: 'proyecto',
       status: 'en_marcha',
       dueDate: addDaysIso(todayIso, 3),
       tag: 'Temas 1 al 5',
@@ -368,7 +353,7 @@ export function getInitialSeedData(
       ownerId,
       title: 'Informe Técnico de Arquitectura',
       subtitle: 'Proyecto Ingeniería',
-      category: 'trabajo',
+      category: 'proyecto',
       status: 'pendiente',
       dueDate: addDaysIso(todayIso, 5),
       tag: 'Borrador inicial',
@@ -381,7 +366,7 @@ export function getInitialSeedData(
       ownerId,
       title: 'Examen Final de Algoritmos',
       subtitle: 'Facultad Informática',
-      category: 'examen',
+      category: 'proyecto',
       status: 'pendiente',
       dueDate: addDaysIso(todayIso, 9),
       tag: 'Práctica + Teoría',
@@ -394,7 +379,7 @@ export function getInitialSeedData(
       ownerId,
       title: 'Organización Semanal y Entreno',
       subtitle: 'Bienestar personal',
-      category: 'diario',
+      category: 'proyecto',
       status: 'en_marcha',
       dueDate: todayIso,
       tag: 'Hábitos clave',
@@ -407,7 +392,7 @@ export function getInitialSeedData(
       ownerId,
       title: 'Presentación de Caso Práctico',
       subtitle: 'Seminario Estratégico',
-      category: 'trabajo',
+      category: 'proyecto',
       status: 'terminado',
       dueDate: addDaysIso(todayIso, -2),
       tag: 'Entregado',
@@ -420,7 +405,7 @@ export function getInitialSeedData(
       ownerId,
       title: 'Renovación de Matrícula y Becas',
       subtitle: 'Secretaría Académica',
-      category: 'diario',
+      category: 'proyecto',
       status: 'terminado',
       dueDate: addDaysIso(todayIso, -4),
       tag: 'Completado',

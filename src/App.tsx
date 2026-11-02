@@ -371,10 +371,6 @@ export default function App() {
   const counts = useMemo(
     () => ({
       todo: tasks.length,
-      trabajo: tasks.filter((t) => t.category === 'trabajo').length,
-      examen: tasks.filter((t) => t.category === 'examen').length,
-      diario: tasks.filter((t) => t.category === 'diario').length,
-      entregas: tasks.filter((t) => t.status !== 'terminado').length,
     }),
     [tasks]
   );
@@ -1040,10 +1036,7 @@ export default function App() {
     setIsTaskModalOpen(true);
   };
 
-  const defaultCategoryForModal: TaskCategory =
-    activeFilter === 'trabajo' || activeFilter === 'examen' || activeFilter === 'diario'
-      ? activeFilter
-      : 'trabajo';
+  const defaultCategoryForModal: TaskCategory = 'proyecto';
 
   return (
     <div className="h-screen w-screen overflow-hidden flex bg-[#0B0E14] text-[#F3F4F6]">

@@ -271,7 +271,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               </h1>
 
               {/* Mobile & Tablet quick sync + new button */}
-              <div className="flex lg:hidden items-center gap-2">
+              <div className="flex sm:hidden items-center gap-2">
                 <button
                   type="button"
                   onClick={onOpenConnectModal}
@@ -371,7 +371,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             <button
               type="button"
               onClick={() => onOpenNewTaskModal()}
-              className="hidden lg:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#FF6B4A] hover:bg-[#ff7e62] text-[#0B0E14] font-semibold text-xs transition-colors cursor-pointer whitespace-nowrap shrink-0 min-h-[40px]"
+              className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#FF6B4A] hover:bg-[#ff7e62] text-[#0B0E14] font-semibold text-xs transition-colors cursor-pointer whitespace-nowrap shrink-0 min-h-[40px]"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
               <span>Nueva tarea</span>
@@ -604,7 +604,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                                   <GripVertical className="w-3.5 h-3.5" />
                                 </span>
                                 <span className="truncate">
-                                  {CATEGORY_LABELS[task.category]} · {task.subtitle}
+                                  {task.subtitle}
                                 </span>
                               </div>
                               <span className="font-mono-num text-slate-300 font-semibold shrink-0">
@@ -946,7 +946,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     >
                       <div className="min-w-0">
                         <p className="text-[11px] text-slate-400">
-                          {CATEGORY_LABELS[t.category]} · {t.subtitle}
+                          {t.subtitle}
                         </p>
                         <p className="text-xs font-bold text-white truncate mt-0.5">{t.title}</p>
                       </div>

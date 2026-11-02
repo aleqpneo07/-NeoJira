@@ -18,10 +18,6 @@ interface SidebarProps {
   onSelectFilter: (filter: NavigationFilter) => void;
   counts: {
     todo: number;
-    trabajo: number;
-    examen: number;
-    diario: number;
-    entregas: number;
   };
   monthlySummary: {
     completedCount: number;
@@ -64,38 +60,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }[] = [
     {
       id: 'todo',
-      label: 'Proyectos y Todo',
-      shortLabel: 'Todo',
+      label: 'Proyectos',
+      shortLabel: 'Proyectos',
       count: counts.todo,
       icon: LayoutGrid,
-    },
-    {
-      id: 'trabajo',
-      label: 'Trabajos',
-      shortLabel: 'Trabajos',
-      count: counts.trabajo,
-      icon: Briefcase,
-    },
-    {
-      id: 'examen',
-      label: 'Exámenes',
-      shortLabel: 'Exámenes',
-      count: counts.examen,
-      icon: BookOpen,
-    },
-    {
-      id: 'diario',
-      label: 'Día a día',
-      shortLabel: 'Día a día',
-      count: counts.diario,
-      icon: SunMedium,
-    },
-    {
-      id: 'entregas',
-      label: 'Entregas',
-      shortLabel: 'Entregas',
-      count: counts.entregas,
-      icon: CalendarClock,
     },
   ];
 
@@ -104,7 +72,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Desktop Left Sidebar */}
       <aside
         aria-label="Navegación principal"
-        className="hidden lg:flex lg:flex-col w-[264px] shrink-0 bg-[#0F131C] border-r border-[#1E2638] p-5 justify-between select-none"
+        className="hidden xl:flex xl:flex-col w-[250px] shrink-0 bg-[#0F131C] border-r border-[#1E2638] p-5 justify-between select-none"
       >
         <div className="space-y-6">
           {/* Brand Header (Matches "E Encargo" from reference image) */}
@@ -272,7 +240,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Mobile Fixed Bottom Navigation Bar (<= 15% viewport height, >= 44px touch targets) */}
       <nav
         aria-label="Navegación móvil"
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-30 h-16 bg-[#0F131C]/95 backdrop-blur-md border-t border-[#1E2638] grid grid-cols-5 items-center px-1"
+        className="hidden"
       >
         {navItems.map((item) => {
           const Icon = item.icon;

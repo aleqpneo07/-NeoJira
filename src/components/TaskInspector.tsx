@@ -104,7 +104,7 @@ export const TaskInspector: React.FC<TaskInspectorProps> = ({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <p className="text-xs font-semibold opacity-80 truncate">
-                {task.subtitle} · {CATEGORY_LABELS[task.category]}
+                {task.subtitle}
               </p>
               <h2 className="text-xl font-extrabold font-display tracking-tight leading-snug mt-0.5">
                 {task.title}
@@ -132,7 +132,7 @@ export const TaskInspector: React.FC<TaskInspectorProps> = ({
                 type="button"
                 onClick={onCloseMobileDrawer}
                 aria-label="Cerrar panel de detalle"
-                className="lg:hidden p-2 rounded-xl bg-black/10 hover:bg-black/20 text-[#0B0E14] transition-colors cursor-pointer"
+                className="2xl:hidden p-2 rounded-xl bg-black/10 hover:bg-black/20 text-[#0B0E14] transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -451,7 +451,7 @@ export const TaskInspector: React.FC<TaskInspectorProps> = ({
       {/* Desktop Right Inspector Column */}
       <aside
         aria-label="Inspector de detalle y subtareas"
-        className="hidden lg:block w-[360px] xl:w-[380px] shrink-0 bg-[#0F131C] border-l border-[#1E2638] p-5 overflow-y-auto"
+        className="hidden 2xl:block w-[360px] shrink-0 bg-[#0F131C] border-l border-[#1E2638] p-5 overflow-y-auto"
       >
         {renderInspectorBody()}
       </aside>
@@ -459,7 +459,7 @@ export const TaskInspector: React.FC<TaskInspectorProps> = ({
       {/* Mobile & Tablet Bottom Sheet / Slide-over Drawer */}
       {isMobileDrawerOpen && task && (
         <div
-          className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end md:items-end bg-black/70 backdrop-blur-xs"
+          className="2xl:hidden fixed inset-0 z-50 flex flex-col justify-end md:items-end bg-black/70 backdrop-blur-xs"
           onClick={(e) => {
             if (e.target === e.currentTarget) onCloseMobileDrawer();
           }}
@@ -467,7 +467,7 @@ export const TaskInspector: React.FC<TaskInspectorProps> = ({
           aria-modal="true"
           aria-label={`Detalle de ${task.title}`}
         >
-          <div className="w-full md:max-w-md max-h-[88vh] md:max-h-full md:h-full rounded-t-3xl md:rounded-none md:rounded-l-3xl bg-[#0F131C] border-t md:border-t-0 md:border-l border-[#263044] px-4 pt-2 pb-8 overflow-y-auto shadow-2xl">
+          <div className="w-full md:max-w-md lg:max-w-lg max-h-[90vh] md:max-h-full md:h-full rounded-t-3xl md:rounded-none md:rounded-l-3xl bg-[#0F131C] border-t md:border-t-0 md:border-l border-[#263044] p-4 sm:p-5 overflow-y-auto shadow-2xl">
             <div className="w-10 h-1.5 bg-slate-700 rounded-full mx-auto my-2 md:hidden" />
             {renderInspectorBody()}
           </div>

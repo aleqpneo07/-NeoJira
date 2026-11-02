@@ -1106,11 +1106,7 @@
         };
 
         const navItems = [
-          { id: 'todo', label: 'Proyectos y Todo', shortLabel: 'Todo', count: counts.todo, icon: LayoutGrid },
-          { id: 'trabajo', label: 'Trabajos', shortLabel: 'Trabajos', count: counts.trabajo, icon: Briefcase },
-          { id: 'examen', label: 'Exámenes', shortLabel: 'Exámenes', count: counts.examen, icon: BookOpen },
-          { id: 'diario', label: 'Día a día', shortLabel: 'Día a día', count: counts.diario, icon: SunMedium },
-          { id: 'entregas', label: 'Entregas', shortLabel: 'Entregas', count: counts.entregas, icon: CalendarClock },
+          { id: 'todo', label: 'Proyectos', shortLabel: 'Proyectos', count: counts.todo, icon: LayoutGrid },
         ];
 
         const sectionHeading =
@@ -1139,7 +1135,7 @@
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-xs font-semibold opacity-80 truncate">
-                      ${selectedTask.subtitle} · ${CATEGORY_LABELS[selectedTask.category]}
+                      ${selectedTask.subtitle}
                     </p>
                     <h2 className="text-xl font-extrabold font-display tracking-tight leading-snug mt-0.5">
                       ${selectedTask.title}
@@ -1166,7 +1162,7 @@
                     <button
                       type="button"
                       onClick=${() => setIsMobileDrawerOpen(false)}
-                      className="lg:hidden p-2 rounded-xl bg-black/10 hover:bg-black/20 text-[#0B0E14] cursor-pointer"
+                      className="2xl:hidden p-2 rounded-xl bg-black/10 hover:bg-black/20 text-[#0B0E14] cursor-pointer"
                     >
                       <${X} className="w-4 h-4" />
                     </button>
@@ -1404,7 +1400,7 @@
         return html`
           <div className="h-screen w-screen overflow-hidden flex bg-[#0B0E14] text-[#F3F4F6]">
             <!-- Left Sidebar (PC) -->
-            <aside className="hidden lg:flex lg:flex-col w-[264px] shrink-0 bg-[#0F131C] border-r border-[#1E2638] p-5 justify-between select-none">
+            <aside className="hidden xl:flex xl:flex-col w-[250px] shrink-0 bg-[#0F131C] border-r border-[#1E2638] p-5 justify-between select-none">
               <div className="space-y-6">
                 <div className="flex items-center justify-between px-1">
                   <div className="flex items-center gap-3">
@@ -1514,7 +1510,7 @@
             </aside>
 
             <!-- Mobile / Tablet Bottom Navigation -->
-            <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 h-16 bg-[#0F131C]/95 backdrop-blur-md border-t border-[#1E2638] grid grid-cols-5 items-center px-1">
+            <nav className="hidden fixed bottom-0 left-0 right-0 z-30 h-16 bg-[#0F131C]/95 backdrop-blur-md border-t border-[#1E2638] grid grid-cols-5 items-center px-1">
               ${navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeFilter === item.id;
@@ -1547,7 +1543,7 @@
                         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white font-display">
                           ${sectionHeading}
                         </h1>
-                        <div className="flex lg:hidden items-center gap-2">
+                        <div className="flex sm:hidden items-center gap-2">
                           <button
                             type="button"
                             onClick=${() => setIsBackupModalOpen(true)}
@@ -1617,7 +1613,7 @@
                       <button
                         type="button"
                         onClick=${() => openNewTaskModal()}
-                        className="hidden lg:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#FF6B4A] hover:bg-[#ff7e62] text-[#0B0E14] font-semibold text-xs transition-colors cursor-pointer shrink-0 min-h-[40px]"
+                        className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#FF6B4A] hover:bg-[#ff7e62] text-[#0B0E14] font-semibold text-xs transition-colors cursor-pointer shrink-0 min-h-[40px]"
                       >
                         <${Plus} className="w-4 h-4 stroke-[2.5]" />
                         <span>Nueva tarea</span>
@@ -1811,7 +1807,7 @@
                                             >
                                               <${GripVertical} className="w-3.5 h-3.5" />
                                             </span>
-                                            <span className="truncate">${CATEGORY_LABELS[task.category]} · ${task.subtitle}</span>
+                                            <span className="truncate">${task.subtitle}</span>
                                           </div>
                                           <span className="font-mono-num text-slate-300 font-semibold shrink-0">${task.progress} %</span>
                                         </div>
@@ -1889,7 +1885,7 @@
                           >
                             <div className="min-w-0">
                               <p className="text-xs text-slate-400">
-                                ${CATEGORY_LABELS[task.category]} · ${task.subtitle} · ${dateInfo.fullDate}
+                                ${task.subtitle} · ${dateInfo.fullDate}
                               </p>
                               <p className="text-sm font-bold text-white font-display mt-0.5 truncate">${task.title}</p>
                             </div>
@@ -2034,7 +2030,7 @@
                                 className="w-full flex items-center justify-between p-3 rounded-xl bg-[#0B0E14] border border-[#1E2638] hover:border-[#FF6B4A] text-left cursor-pointer"
                               >
                                 <div>
-                                  <p className="text-[11px] text-slate-400">${CATEGORY_LABELS[t.category]} · ${t.subtitle}</p>
+                                  <p className="text-[11px] text-slate-400">${t.subtitle}</p>
                                   <p className="text-xs font-bold text-white">${t.title}</p>
                                 </div>
                                 <span className="text-xs font-mono-num font-semibold text-[#FF6B4A]">${t.progress} %</span>
@@ -2070,17 +2066,17 @@
               </section>
 
               <!-- Right Inspector (Desktop) -->
-              <aside className="hidden lg:block w-[360px] xl:w-[380px] shrink-0 bg-[#0F131C] border-l border-[#1E2638] p-5 overflow-y-auto">
+              <aside className="hidden 2xl:block w-[360px] shrink-0 bg-[#0F131C] border-l border-[#1E2638] p-5 overflow-y-auto">
                 ${renderInspectorContent()}
               </aside>
 
               <!-- Mobile / Tablet Drawer -->
               ${isMobileDrawerOpen && selectedTask && html`
                 <div
-                  className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end md:items-end bg-black/70 backdrop-blur-xs"
+                  className="2xl:hidden fixed inset-0 z-50 flex flex-col justify-end md:items-end bg-black/70 backdrop-blur-xs"
                   onClick=${(e) => { if (e.target === e.currentTarget) setIsMobileDrawerOpen(false); }}
                 >
-                  <div className="w-full md:max-w-md max-h-[88vh] md:max-h-full md:h-full rounded-t-3xl md:rounded-none md:rounded-l-3xl bg-[#0F131C] border-t md:border-l border-[#263044] px-4 pt-2 pb-8 overflow-y-auto shadow-2xl">
+                  <div className="w-full md:max-w-md lg:max-w-lg max-h-[90vh] md:max-h-full md:h-full rounded-t-3xl md:rounded-none md:rounded-l-3xl bg-[#0F131C] border-t md:border-l border-[#263044] px-4 pt-2 pb-8 overflow-y-auto shadow-2xl">
                     <div className="w-10 h-1.5 bg-slate-700 rounded-full mx-auto my-2 md:hidden" />
                     ${renderInspectorContent()}
                   </div>
@@ -2322,7 +2318,7 @@
             <div className="w-full max-w-lg rounded-2xl bg-[#131822] border border-[#263044] p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-extrabold text-white font-display">
-                  ${editingTask ? 'Editar elemento' : 'Nuevo Trabajo, Examen o Tarea'}
+                  ${editingTask ? 'Editar proyecto' : 'Nuevo Proyecto'}
                 </h2>
                 <button type="button" onClick=${onClose} className="p-2 rounded-xl text-slate-400 hover:text-white cursor-pointer">
                   <${X} className="w-4 h-4" />
@@ -2346,26 +2342,7 @@
                   </div>
                 `}
 
-                <div className="grid grid-cols-3 gap-2">
-                  ${[
-                    { id: 'trabajo', label: 'Trabajo' },
-                    { id: 'examen', label: 'Examen' },
-                    { id: 'diario', label: 'Día a día' },
-                  ].map((cat) => html`
-                    <button
-                      key=${cat.id}
-                      type="button"
-                      onClick=${() => setCategory(cat.id)}
-                      className=${`py-2 px-3 rounded-xl text-xs font-medium border cursor-pointer ${
-                        category === cat.id
-                          ? 'bg-[#FF6B4A]/20 border-[#FF6B4A] text-white font-semibold'
-                          : 'bg-[#0B0E14] border-[#222B3D] text-slate-400'
-                      }`}
-                    >
-                      ${cat.label}
-                    </button>
-                  `)}
-                </div>
+
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>

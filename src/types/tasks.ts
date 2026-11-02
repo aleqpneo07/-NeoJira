@@ -1,8 +1,8 @@
-export type TaskCategory = 'trabajo' | 'examen' | 'diario';
+export type TaskCategory = 'proyecto';
 
 export type TaskStatus = 'pendiente' | 'en_marcha' | 'terminado';
 
-export type NavigationFilter = 'todo' | 'trabajo' | 'examen' | 'diario' | 'entregas';
+export type NavigationFilter = 'todo';
 
 export type ViewMode = 'tablero' | 'lista' | 'calendario';
 
@@ -66,10 +66,11 @@ export const SUBTASK_CONSTRAINTS = {
   MAX_SORT_ORDER: 500,
 } as const;
 
-export const CATEGORY_LABELS: Record<TaskCategory, string> = {
-  trabajo: 'Trabajos',
-  examen: 'Exámenes',
-  diario: 'Día a día',
+export const CATEGORY_LABELS: Record<string, string> = {
+  proyecto: 'Proyectos',
+  trabajo: 'Proyectos',
+  examen: 'Proyectos',
+  diario: 'Proyectos',
 };
 
 export const STATUS_LABELS: Record<TaskStatus, string> = {
